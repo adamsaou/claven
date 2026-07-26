@@ -18,20 +18,15 @@ const TEXT = '#E8E6E1'
 const EMBER = '#FF5A2B'
 
 /**
- * DEVIATION FROM BRAND.md, deliberate and worth recording.
+ * Selection — brand/BRAND.md section 2. The next step on the surface ramp
+ * (obsidian → surface 1 → surface 2 → line → selection), measuring 1.92:1
+ * against obsidian.
  *
- * The guide specifies selection `#1E222A` (Surface 2). Measured against
- * obsidian `#0F1115` that is a 1.19:1 contrast ratio — perceptually invisible.
- * VS Code's selection sits near 2:1 and that is roughly the floor for a
- * selection you can actually see.
- *
- * `#3D4455` is a neutral lift in the same blue-grey family and measures 1.99:1.
- * Not ember: keywords are ember, and an ember-tinted selection would erase the
- * very tokens most likely to be selected.
- *
- * brand/BRAND.md should be updated to match rather than this drifting quietly.
+ * The guide originally specified `#1E222A`, which measures 1.19:1 and is
+ * perceptually invisible; it was corrected in the guide rather than worked
+ * around here, so the two cannot drift apart.
  */
-const SELECTION = '#3D4455'
+const SELECTION = '#3D424C'
 
 const SYNTAX = {
   comment: '#6B7280',

@@ -27,6 +27,7 @@
   --color-surface-1: #16191f;
   --color-surface-2: #1e222a;
   --color-line: #2a2f39;
+  --color-selection: #3d424c;
 
   /* Brand calls these Text / Text muted / Text dim. Renamed to `ink` here only
      so the Tailwind utilities read as text-ink rather than text-text. Values are
@@ -116,11 +117,9 @@ body {
   background: transparent;
 }
 
-/* Selection outside the editor. Inside, CodeMirror owns it.
-   Same value as the editor's — see the deviation note in clavenDark.ts for why
-   this is not the brand guide's #1E222A. */
+/* Selection outside the editor. Inside, CodeMirror owns it. */
 ::selection {
-  background: #3d4455;
+  background: var(--color-selection);
 }
 
 @media (prefers-reduced-motion: reduce) {

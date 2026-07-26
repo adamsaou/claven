@@ -11,6 +11,7 @@
   --surface-1: #16191F;
   --surface-2: #1E222A;
   --line: #2A2F39;
+  --selection: #3D424C;
   --text: #E8E6E1;
   --text-muted: #9AA0AA;
   --text-dim: #6B7280;
@@ -31,7 +32,7 @@
   --syn-type: #C8A2FF;
   --syn-variable: #E8E6E1;
   --syn-linenumber: #3A4049;
-  --syn-selection: #1E222A;
+  --syn-selection: #3D424C;
   --syn-cursor: #FF5A2B;
 
   /* type */

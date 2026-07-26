@@ -69,6 +69,7 @@ remove some.
 | Surface 1 (chrome) | `#16191F` |
 | Surface 2 (raised/input) | `#1E222A` |
 | Line | `#2A2F39` |
+| Selection | `#3D424C` |
 | Text | `#E8E6E1` |
 | Text muted | `#9AA0AA` |
 | Text dim | `#6B7280` |
@@ -81,7 +82,19 @@ remove some.
 ### Syntax theme — "Claven Dark"
 comment `#6B7280` · keyword `#FF5A2B` · string `#5FBF7A` · number `#F0B429` ·
 function `#5AD1E6` · type `#C8A2FF` · variable `#E8E6E1` · line number `#3A4049` ·
-selection `#1E222A` · cursor `#FF5A2B`
+selection `#3D424C` · cursor `#FF5A2B`
+
+**Selection was `#1E222A` until 2026-07-26.** Measured against obsidian that is
+a 1.19:1 contrast ratio — perceptually invisible, and selecting a word looked
+like nothing had happened. `#3D424C` is the next step on the surface ramp
+(same hue relationship as obsidian → surface 1 → surface 2 → line) and measures
+1.92:1, roughly where VS Code sits. Deliberately not ember: keywords are ember,
+and an ember-tinted selection would erase the tokens most likely to be selected.
+
+Related: the active line must stay **translucent**, not a solid surface colour.
+CodeMirror paints its selection layer at `z-index: -1`, behind the content, so
+an opaque active-line background hides the selection on the one line you are
+actually selecting in.
 
 ## 3. Typography
 
