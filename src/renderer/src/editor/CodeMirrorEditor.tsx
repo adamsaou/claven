@@ -80,22 +80,34 @@ function languageExtension(language: EditorLanguage): Extension[] {
   }
 }
 
+/** Where the cursor is, in the 1-based terms a status bar shows. */
+export type CursorPosition = { line: number; column: number; selected: number }
+
 type Props = {
   value: string
   language: EditorLanguage
   onChange: (value: string) => void
   onSave: () => void
+  onCursor?: (position: CursorPosition) => void
 }
 
-export function CodeMirrorEditor({ value, language, onChange, onSave }: Props): React.JSX.Element {
+export function CodeMirrorEditor({
+  value,
+  language,
+  onChange,
+  onSave,
+  onCursor
+}: Props): React.JSX.Element {
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
   // Held in refs so the extensions built once on mount always call the latest
   // handler, without tearing down and rebuilding the view on every render.
   const latestChange = useRef(onChange)
   const latestSave = useRef(onSave)
+  const latestCursor = useRef(onCursor)
   latestChange.current = onChange
   latestSave.current = onSave
+  latestCursor.current = onCursor
 
   useEffect(() => {
     if (!host.current) return
@@ -136,6 +148,16 @@ export function CodeMirrorEditor({ value, language, onChange, onSave }: Props): 
         ]),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) latestChange.current(update.state.doc.toString())
+          if (update.docChanged || update.selectionSet) {
+            const range = update.state.selection.main
+            const line = update.state.doc.lineAt(range.head)
+            latestCursor.current?.({
+              line: line.number,
+              // Editors count columns from 1, and the doc indexes from 0.
+              column: range.head - line.from + 1,
+              selected: Math.abs(range.to - range.from)
+            })
+          }
         }),
         clavenDark,
         ...languageExtension(language)

@@ -9,7 +9,15 @@ import type { DirEntry } from '../../shared/files'
  * they do, that is a real annoyance-log entry rather than a guess.
  */
 
-const HIDDEN = new Set(['.git', 'node_modules', 'out', 'dist', '.vite'])
+/** Never worth a row. */
+const HIDDEN = new Set(['.git', 'node_modules', 'out', 'dist', '.vite', '.venv', '__pycache__'])
+
+/**
+ * Compiled output. Shown but dimmed rather than hidden — in a competitive
+ * programming folder every .cpp has a matching .exe, which doubles the tree,
+ * but hiding a file the user can see on disk is worse than de-emphasising it.
+ */
+const ARTIFACT = /\.(exe|out|o|obj|class|pyc|pdb|ilk|dll|so|dylib|d)$/i
 
 type NodeProps = {
   entry: DirEntry
@@ -38,17 +46,26 @@ function TreeNode({ entry, depth, activePath, onOpenFile }: NodeProps): React.JS
   }, [entry, expanded, children, onOpenFile])
 
   const isActive = activePath === entry.path
+  const isArtifact = entry.kind === 'file' && ARTIFACT.test(entry.name)
 
   return (
     <>
       <button
         onClick={() => void toggle()}
-        style={{ paddingInlineStart: `${depth * 12 + 8}px` }}
-        className={`flex w-full items-center gap-1.5 py-0.5 pe-2 text-start text-[13px] hover:bg-white/5 ${
-          isActive ? 'bg-white/10 text-ink' : 'text-ink-muted'
+        title={entry.path}
+        style={{ paddingInlineStart: `${depth * 12 + 10}px` }}
+        className={`relative flex w-full items-center gap-1.5 py-[3px] pe-2 text-start text-[13px] transition-colors ${
+          isActive
+            ? 'bg-surface-2 text-ink'
+            : isArtifact
+              ? 'text-ink-dim hover:bg-surface-2/60'
+              : 'text-ink-muted hover:bg-surface-2/60'
         }`}
       >
-        <span className="w-3 shrink-0 opacity-60">
+        {/* Ember marks the open file, matching the active tab's indicator so
+            the two chrome surfaces agree about what is focused. */}
+        {isActive && <span className="bg-ember absolute inset-y-0 start-0 w-0.5" />}
+        <span className="w-3 shrink-0 text-[10px] opacity-50">
           {entry.kind === 'directory' ? (expanded ? '▾' : '▸') : ''}
         </span>
         {/* dir="auto" so Arabic and Hebrew filenames render in their own
@@ -56,11 +73,14 @@ function TreeNode({ entry, depth, activePath, onOpenFile }: NodeProps): React.JS
         <span dir="auto" className="truncate">
           {entry.name}
         </span>
-        {entry.isSymlink && <span className="shrink-0 opacity-40">↗</span>}
+        {entry.isSymlink && <span className="shrink-0 text-[10px] opacity-40">↗</span>}
       </button>
 
-      {expanded && error && (
-        <div style={{ paddingInlineStart: `${depth * 12 + 24}px` }} className="text-error py-0.5 text-xs">
+      {expanded && error !== null && (
+        <div
+          style={{ paddingInlineStart: `${depth * 12 + 25}px` }}
+          className="text-error py-0.5 pe-2 text-xs"
+        >
           {error}
         </div>
       )}
@@ -101,6 +121,8 @@ export function FileTree({ root, activePath, onOpenFile, onOpenFolder }: Props):
     })
   }, [root])
 
+  const visible = entries.filter((entry) => !HIDDEN.has(entry.name))
+
   // Width comes from --sidebar-w (200px, per BRAND.md chrome metrics). No w-*
   // class here — two sources of truth for one width is how chrome metrics
   // quietly drift apart.
@@ -109,30 +131,39 @@ export function FileTree({ root, activePath, onOpenFile, onOpenFolder }: Props):
       className="border-line bg-surface-1 flex h-full shrink-0 flex-col border-e"
       style={{ width: 'var(--sidebar-w)' }}
     >
-      <div className="border-line flex items-center justify-between border-b px-3 py-2">
-        <span className="text-ink-muted truncate text-xs uppercase tracking-wide">
-          {root === null ? 'no folder' : root.split(/[\\/]/).pop()}
+      <div
+        className="border-line flex shrink-0 items-center justify-between gap-2 border-b px-3"
+        style={{ height: 'var(--titlebar-h)' }}
+      >
+        <span
+          className="text-ink-dim truncate text-[10px] font-medium uppercase"
+          style={{ letterSpacing: '0.14em' }}
+          title={root ?? undefined}
+        >
+          {root === null ? 'no folder' : (root.split(/[\\/]/).pop() ?? root)}
         </span>
         <button
           onClick={onOpenFolder}
-          className="border-line hover:bg-surface-2 shrink-0 rounded-xs border px-2 py-0.5 text-xs"
+          className="border-line text-ink-muted hover:text-ink hover:border-ink-dim shrink-0 border px-2 py-0.5 text-[11px] transition-colors"
+          style={{ borderRadius: 'var(--radius-xs)', transitionDuration: 'var(--dur-micro)' }}
         >
           open
         </button>
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto py-1">
-        {entries
-          .filter((entry) => !HIDDEN.has(entry.name))
-          .map((entry) => (
-            <TreeNode
-              key={entry.path}
-              entry={entry}
-              depth={0}
-              activePath={activePath}
-              onOpenFile={onOpenFile}
-            />
-          ))}
+        {root !== null && visible.length === 0 && (
+          <p className="text-ink-dim px-3 py-2 text-xs">empty folder</p>
+        )}
+        {visible.map((entry) => (
+          <TreeNode
+            key={entry.path}
+            entry={entry}
+            depth={0}
+            activePath={activePath}
+            onOpenFile={onOpenFile}
+          />
+        ))}
       </div>
     </nav>
   )
