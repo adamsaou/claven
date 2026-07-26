@@ -24,8 +24,11 @@ const RULES = [
     // option -- which is the entire reason CodeMirror was chosen over writing one.
     pattern: /from\s+['"]@codemirror\/view['"]/,
     within: 'src/renderer',
-    allow: ['src/renderer/src/editor/CodeMirrorEditor.tsx'],
-    message: '@codemirror/view may only be imported by the editor adapter'
+    // The adapter is the whole src/renderer/src/editor directory, not one file.
+    // The point of the rule is that the REST of the app never reaches across.
+    allowPrefix: 'src/renderer/src/editor/',
+    allow: [],
+    message: '@codemirror/view may only be imported inside src/renderer/src/editor/'
   },
   {
     // The renderer is sandboxed, so this should be impossible -- but an import
@@ -58,6 +61,7 @@ for (const rule of RULES) {
   for await (const file of walk(join(root, rule.within))) {
     const rel = relative(root, file).split(sep).join('/')
     if (rule.allow.includes(rel)) continue
+    if (rule.allowPrefix && rel.startsWith(rule.allowPrefix)) continue
     const source = await readFile(file, 'utf8')
     source.split('\n').forEach((line, index) => {
       if (rule.pattern.test(line)) {

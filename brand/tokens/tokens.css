@@ -1,0 +1,56 @@
+:root {
+  /* brand */
+  --claven-ember: #FF5A2B;
+  --claven-ember-hover: #FF7248;
+  --claven-ember-deep: #C43D18;
+  --claven-obsidian: #0F1115;
+  --claven-paper: #F5F3EE;
+
+  /* surfaces & text (dark, default) */
+  --bg: #0F1115;
+  --surface-1: #16191F;
+  --surface-2: #1E222A;
+  --line: #2A2F39;
+  --text: #E8E6E1;
+  --text-muted: #9AA0AA;
+  --text-dim: #6B7280;
+  --text-high: #FFFFFF;
+
+  /* status */
+  --success: #5FBF7A;
+  --warning: #F0B429;
+  --error: #E5484D;
+  --info: #5AD1E6;
+
+  /* syntax — "Claven Dark" */
+  --syn-comment: #6B7280;
+  --syn-keyword: #FF5A2B;
+  --syn-string: #5FBF7A;
+  --syn-number: #F0B429;
+  --syn-function: #5AD1E6;
+  --syn-type: #C8A2FF;
+  --syn-variable: #E8E6E1;
+  --syn-linenumber: #3A4049;
+  --syn-selection: #1E222A;
+  --syn-cursor: #FF5A2B;
+
+  /* type */
+  --font-display: 'Space Grotesk', sans-serif;
+  --font-ui: 'IBM Plex Sans', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* radius */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+
+  /* spacing (4px grid) */
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+  --space-6: 24px; --space-8: 32px; --space-12: 48px; --space-16: 64px; --space-24: 96px;
+
+  /* motion */
+  --dur-micro: 120ms;
+  --dur-panel: 200ms;
+  --ease: cubic-bezier(.2, 0, 0, 1);
+}

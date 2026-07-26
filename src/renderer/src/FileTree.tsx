@@ -45,7 +45,7 @@ function TreeNode({ entry, depth, activePath, onOpenFile }: NodeProps): React.JS
         onClick={() => void toggle()}
         style={{ paddingInlineStart: `${depth * 12 + 8}px` }}
         className={`flex w-full items-center gap-1.5 py-0.5 pe-2 text-start text-[13px] hover:bg-white/5 ${
-          isActive ? 'bg-white/10 text-ink' : 'text-ink-dim'
+          isActive ? 'bg-white/10 text-ink' : 'text-ink-muted'
         }`}
       >
         <span className="w-3 shrink-0 opacity-60">
@@ -60,7 +60,7 @@ function TreeNode({ entry, depth, activePath, onOpenFile }: NodeProps): React.JS
       </button>
 
       {expanded && error && (
-        <div style={{ paddingInlineStart: `${depth * 12 + 24}px` }} className="text-bad py-0.5 text-xs">
+        <div style={{ paddingInlineStart: `${depth * 12 + 24}px` }} className="text-error py-0.5 text-xs">
           {error}
         </div>
       )}
@@ -102,14 +102,15 @@ export function FileTree({ root, activePath, onOpenFile, onOpenFolder }: Props):
   }, [root])
 
   return (
-    <nav className="border-edge bg-surface-raised flex h-full w-64 shrink-0 flex-col border-e">
-      <div className="border-edge flex items-center justify-between border-b px-3 py-2">
-        <span className="text-ink-dim truncate text-xs uppercase tracking-wide">
+    <nav className="border-line bg-surface-1 flex h-full w-64 shrink-0 flex-col border-e"
+         style={{ width: 'var(--sidebar-w)' }}>
+      <div className="border-line flex items-center justify-between border-b px-3 py-2">
+        <span className="text-ink-muted truncate text-xs uppercase tracking-wide">
           {root === null ? 'no folder' : root.split(/[\\/]/).pop()}
         </span>
         <button
           onClick={onOpenFolder}
-          className="border-edge hover:bg-edge shrink-0 rounded border px-2 py-0.5 text-xs"
+          className="border-line hover:bg-surface-2 shrink-0 rounded-xs border px-2 py-0.5 text-xs"
         >
           open
         </button>

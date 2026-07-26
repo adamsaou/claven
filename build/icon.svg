@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <title>Claven</title>
+  <!--
+    Packaging source for electron-builder. Generated from
+    brand/assets/claven-app-icon.svg — keep them in sync.
+
+    Every fill here is an explicit hex on purpose. electron-builder rasterises
+    this with resvg, which has no currentColor substitution and silently falls
+    back to BLACK. A mark using currentColor renders perfectly in a browser and
+    ships as an invisible black-on-transparent icon on every dark taskbar.
+
+    Geometry is the canonical 96x96 mark scaled 3x and inset 22% per BRAND.md:
+    corner radius 114 (22% of 512), obsidian field, mark inset 112 on all sides.
+  -->
+  <rect width="512" height="512" rx="114" fill="#0F1115"/>
+  <g transform="translate(112 112) scale(3)">
+    <path d="M8 8 H62 L34 88 H8 Z" fill="#F5F3EE"/>
+    <path d="M72 8 H88 V88 H44 Z" fill="#FF5A2B"/>
+  </g>
+</svg>

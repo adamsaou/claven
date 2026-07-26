@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; background: #0F1115; }
+  a { color: #5AD1E6; text-decoration: none; }
+  a:hover { color: #8ee2f0; }
+</style>
+</helmet>
+
+<div style="background: #0F1115; color: #E8E6E1; font-family: 'IBM Plex Sans', sans-serif; padding: 0 0 120px;">
+
+  <!-- ===== COVER ===== -->
+  <div style="max-width: 1120px; margin: 0 auto; padding: 96px 40px 72px; display: flex; flex-direction: column; gap: 56px;">
+    <div style="display: flex; align-items: center; gap: 28px;">
+      <svg width="76" height="76" viewBox="0 0 96 96"><path d="M8 8 H62 L34 88 H8 Z" fill="#F5F3EE"></path><path d="M72 8 H88 V88 H44 Z" fill="#FF5A2B"></path></svg>
+      <div style="font-family: 'Space Grotesk', sans-serif; font-weight: 500; font-size: 46px; letter-spacing: 0.3em; text-transform: uppercase; padding-left: 0.3em; line-height: 1;">Claven</div>
+    </div>
+    <div style="display: flex; flex-wrap: wrap; gap: 48px; align-items: flex-end; justify-content: space-between; border-top: 1px solid #2A2F39; padding-top: 32px;">
+      <p style="margin: 0; max-width: 620px; font-size: 17px; line-height: 1.65; color: #9AA0AA; text-wrap: pretty;">Brand &amp; design system for <strong style="color: #E8E6E1; font-weight: 600;">Claven</strong>, an IDE built from scratch. The mark is a <strong style="color: #E8E6E1; font-weight: 600;">cleaved square</strong> — a whole split into panes, the moment of a clean cut. Everything below is specified in exact values so it can be implemented directly.</p>
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 2; color: #6B7280; text-align: right;">
+        <div>VERSION 1.0</div>
+        <div>MARK 1e &middot; WORDMARK 1aa</div>
+        <div>JUL 2026</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 01 MARK CONSTRUCTION ===== -->
+  <div style="max-width: 1120px; margin: 0 auto; padding: 0 40px;">
+    <div style="display: flex; align-items: baseline; gap: 16px; padding-bottom: 24px; border-bottom: 1px solid #2A2F39; margin-bottom: 40px;">
+      <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #FF5A2B;">01</span>
+      <h2 style="margin: 0; font-family: 'Space Grotesk', sans-serif; font-size: 26px; font-weight: 600; letter-spacing: -0.01em;">The mark</h2>
+      <span style="font-size: 13px; color: #6B7280;">Geometry, drawn on a 96&times;96 grid</span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px;">
+      <div style="background: #16191F; border: 1px solid #2A2F39; border-radius: 8px; padding: 40px; display: flex; align-items: center; justify-content: center;">
+        <svg width="280" height="280" viewBox="0 0 96 96">
+          <g stroke="#2A2F39" stroke-width="0.5">
+            <path d="M8 0V96M24 0V96M40 0V96M56 0V96M72 0V96M88 0V96M0 8H96M0 24H96M0 40H96M0 56H96M0 72H96M0 88H96"></path>
+          </g>
+          <path d="M8 8 H62 L34 88 H8 Z" fill="#F5F3EE"></path>
+          <path d="M72 8 H88 V88 H44 Z" fill="#FF5A2B"></path>
+          <g stroke="#5AD1E6" stroke-width="0.6" stroke-dasharray="2 2"><path d="M62 8 L34 88"></path><path d="M72 8 L44 88"></path></g>
+        </svg>
+      </div>
+      <div style="background: #16191F; border: 1px solid #2A2F39; border-radius: 8px; padding: 40px; display: flex; flex-direction: column; gap: 24px; justify-content: center;">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 12.5px; line-height: 2.1; color: #9AA0AA;">
+          <div><span style="color:#6B7280;">viewBox</span> &nbsp;0 0 96 96</div>
+          <div><span style="color:#6B7280;">bounds</span> &nbsp;&nbsp;8 &rarr; 88 (80&times;80 square)</div>
+          <div><span style="color:#6B7280;">cleave</span> &nbsp;&nbsp;rise 80 / run &minus;28 &nbsp;(19.3&deg; from vertical)</div>
+          <div><span style="color:#6B7280;">gap</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;10 horizontal &middot; 9.4 perpendicular</div>
+          <div><span style="color:#6B7280;">left</span> &nbsp;&nbsp;&nbsp;&nbsp;M8 8 H62 L34 88 H8 Z</div>
+          <div><span style="color:#6B7280;">right</span> &nbsp;&nbsp;&nbsp;M72 8 H88 V88 H44 Z</div>
+        </div>
+        <p style="margin: 0; font-size: 14px; line-height: 1.7; color: #9AA0AA; text-wrap: pretty;">The two cut edges are strictly parallel. The left piece keeps the square&rsquo;s full left edge; the right piece keeps the full right edge — so the silhouette still reads as one square. Never round the corners of the pieces and never change the cleave angle.</p>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; margin-bottom: 96px;">
+      <div style="border: 1px solid #2A2F39; border-radius: 8px; overflow: hidden;">
+        <div style="background: #0F1115; padding: 40px; display: flex; justify-content: center;"><svg width="72" height="72" viewBox="0 0 96 96"><path d="M8 8 H62 L34 88 H8 Z" fill="#F5F3EE"></path><path d="M72 8 H88 V88 H44 Z" fill="#FF5A2B"></path></svg></div>
+        <div style="background: #16191F; padding: 12px 14px; font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #9AA0AA;">Primary / on dark</div>
+      </div>
+      <div style="border: 1px solid #2A2F39; border-radius: 8px; overflow: hidden;">
+        <div style="background: #F5F3EE; padding: 40px; display: flex; justify-content: center;"><svg width="72" height="72" viewBox="0 0 96 96"><path d="M8 8 H62 L34 88 H8 Z" fill="#0F1115"></path><path d="M72 8 H88 V88 H44 Z" fill="#FF5A2B"></path></svg></div>
+        <div style="background: #16191F; padding: 12px 14px; font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #9AA0AA;">Primary / on light</div>
+      </div>
+      <div style="border: 1px solid #2A2F39; border-radius: 8px; overflow: hidden;">
+        <div style="background: #0F1115; padding: 40px; display: flex; justify-content: center;"><svg width="72" height="72" viewBox="0 0 96 96"><path d="M8 8 H62 L34 88 H8 Z" fill="#E8E6E1"></path><path d="M72 8 H88 V88 H44 Z" fill="#E8E6E1"></path></svg></div>
+        <div style="background: #16191F; padding: 12px 14px; font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #9AA0AA;">Mono / one colour</div>
+      </div>
+      <div style="border: 1px solid #2A2F39; border-radius: 8px; overflow: hidden;">
+        <div style="background: #FF5A2B; padding: 40px; display: flex; justify-content: center;"><svg width="72" height="72" viewBox="0 0 96 96"><path d="M8 8 H62 L34 88 H8 Z" fill="#0F1115"></path><path d="M72 8 H88 V88 H44 Z" fill="#0F1115"></path></svg></div>
+        <div style="background: #16191F; padding: 12px 14px; font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #9AA0AA;">Knockout / on ember</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 02 LOCKUPS ===== -->
+  <div style="max-width: 1120px; margin: 0 auto; padding: 0 40px;">
+    <div style="display: flex; align-items: baseline; gap: 16px; padding-bottom: 24px; border-bottom: 1px solid #2A2F39; margin-bottom: 40px;">
+      <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #FF5A2B;">02</span>
+      <h2 style="margin: 0; font-family: 'Space Grotesk', sans-serif; font-size: 26px; font-weight: 600; letter-spacing: -0.01em;">Lockups &amp; clearspace</h2>
+      <span style="font-size: 13px; color: #6B7280;">Unit <em>x</em> = height of the mark</span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1.4fr 1fr; gap: 24px; margin-bottom: 24px;">
+      <div style="background: #16191F; border: 1px solid #2A2F39; border-radius: 8px; padding: 48px; display: flex; flex-direction: column; gap: 32px;">
+        <div style="display: flex; align-items: center; gap: 24px;">
+          <svg width="48" height="48" viewBox="0 0 96 96" style="outline: 1px dashed #2A2F39; outline-offset: 12px;"><path d="M8 8 H62 L34 88 H8 Z" fill="#F5F3EE"></path><path d="M72 8 H88 V88 H44 Z" fill="#FF5A2B"></path></svg>
+          <div style="font-family: 'Space Grotesk', sans-serif; font-weight: 500; font-size: 27px; letter-spacing: 0.3em; text-transform: uppercase; padding-left: 0.3em; line-height: 1;">Claven</div>
+        </div>
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 2; color: #9AA0AA;">
+          <div><span style="color:#6B7280;">horizontal</span> &nbsp;cap height of wordmark = 0.56x</div>
+          <div><span style="color:#6B7280;">gap</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.5x between mark and C</div>
+          <div><span style="color:#6B7280;">clearspace</span> &nbsp;0.25x on all sides (dashed)</div>
+          <div><span style="color:#6B7280;">baseline</span> &nbsp;&nbsp;&nbsp;optically centred to mark, not boxed</div>
+        </div>
+      </div>
+      <div style="background: #16191F; border: 1px solid #2A2F39; border-radius: 8px; padding: 48px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px;">
+        <svg width="56" height="56" viewBox="0 0 96 96"><path d="M8 8 H62 L34 88 H8 Z" fill="#F5F3EE"></path><path d="M72 8 H88 V88 H44 Z" fill="#FF5A2B"></path></svg>
+        <div style="font-family: 'Space Grotesk', sans-serif; font-weight: 500; font-size: 20px; letter-spacing: 0.3em; text-transform: uppercase; padding-left: 0.3em; line-height: 1;">Claven</div>
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: #6B7280;">Stacked &middot; gap 0.5x</div>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; margin-bottom: 24px;">
+      <div style="background: #16191F; border: 1px solid #2A2F39; border-radius: 8px; padding: 28px; display: flex; flex-direction: column; align-items: center; gap: 20px;">
+        <div style="height: 40px; display: flex; align-items: center;"><svg width="16" height="16" viewBox="0 0 96 96"><path d="M8 8 H62 L34 88 H8 Z" fill="#F5F3EE"></path><path d="M72 8 H88 V88 H44 Z" fill="#FF5A2B"></path></svg></div>
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #9AA0AA;">16px favicon</div>
+      </div>
+      <div style="background: #16191F; border: 1px solid #2A2F39; border-radius: 8px; padding: 28px; display: flex; flex-direction: column; align-items: center; gap: 20px;">
+        <div style="height: 40px; display: flex; align-items: center;"><svg width="24" height="24" viewBox="0 0 96 96"><path d="M8 8 H62 L34 88 H8 Z" fill="#F5F3EE"></path><path d="M72 8 H88 V88 H44 Z" fill="#FF5A2B"></path></svg></div>
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #9AA0AA;">24px min mark</div>
+      </div>
+      <div style="background: #16191F; border: 1px solid #2A2F39; border-radius: 8px; padding: 28px; display: flex; flex-direction: column; align-items: center; gap: 20px;">
+        <div style="height: 40px; display: flex; align-items: center;"><div style="font-family: 'Space Grotesk', sans-serif; font-weight: 500; font-size: 13px; letter-spacing: 0.3em; text-transform: uppercase; padding-left: 0.3em;">Claven</div></div>
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #9AA0AA;">13px min wordmark</div>
+      </div>
+      <div style="background: #FF5A2B; border-radius: 8px; padding: 28px; display: flex; flex-direction: column; align-items: center; gap: 20px;">
+        <div style="height: 40px; width: 40px; background: #0F1115; border-radius: 9px; display: flex; align-items: center; justify-content: center;"><svg width="26" height="26" viewBox="0 0 96 96"><path d="M8 8 H62 L34 88 H8 Z" fill="#F5F3EE"></path><path d="M72 8 H88 V88 H44 Z" fill="#FF5A2B"></path></svg></div>
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #0F1115;">App icon 22% inset</div>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; margin-bottom: 96px;">
+      <div style="border: 1px solid #3A2018; border-radius: 8px; padding: 24px; display: flex; flex-direction: column; align-items: center; gap: 18px; background: #16191F;">
+        <svg width="52" height="52" viewBox="0 0 96 96"><path d="M8 8 H62 L34 88 H8 Z" fill="#F5F3EE" transform="rotate(14 48 48)"></path><path d="M72 8 H88 V88 H44 Z" fill="#FF5A2B" transform="rotate(14 48 48)"></path></svg>
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: #E5484D;">&times; Never rotate</div>
+      </div>
+      <div style="border: 1px solid #3A2018; border-radius: 8px; padding: 24px; display: flex; flex-direction: column; align-items: center; gap: 18px; background: #16191F;">
+        <svg width="52" height="52" viewBox="0 0 96 96"><path d="M8 8 H62 L34 88 H8 Z" fill="#5FBF7A"></path><path d="M72 8 H88 V88 H44 Z" fill="#C8A2FF"></path></svg>
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: #E5484D;">&times; No off-brand colour</div>
+      </div>
+      <div style="border: 1px solid #3A2018; border-radius: 8px; padding: 24px; display: flex; flex-direction: column; align-items: center; gap: 18px; background: #16191F;">
+        <svg width="52" height="52" viewBox="0 0 96 96"><path d="M8 8 H50 L26 88 H8 Z" fill="#F5F3EE"></path><path d="M78 8 H88 V88 H52 Z" fill="#FF5A2B"></path></svg>
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: #E5484D;">&times; No wider gap</div>
+      </div>
+      <div style="border: 1px solid #3A2018; border-radius: 8px; padding: 24px; display: flex; flex-direction: column; align-items: center; gap: 18px; background: #16191F;">
+        <svg width="52" height="76" viewBox="0 0 96 140" preserveAspectRatio="none"><path d="M8 8 H62 L34 88 H8 Z" fill="#F5F3EE"></path><path d="M72 8 H88 V88 H44 Z" fill="#FF5A2B"></path></svg>
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: #E5484D;">&times; Never stretch</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 03 COLOUR ===== -->
+  <div style="max-width: 1120px; margin: 0 auto; padding: 0 40px;">
+    <div style="display: flex; align-items: baseline; gap: 16px; padding-bottom: 24px; border-bottom: 1px solid #2A2F39; margin-bottom: 40px;">
+      <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #FF5A2B;">03</span>
+      <h2 style="margin: 0; font-family: 'Space Grotesk', sans-serif; font-size: 26px; font-weight: 600; letter-spacing: -0.01em;">Colour</h2>
+      <span style="font-size: 13px; color: #6B7280;">Dark-first. Ember is the only accent — spend it sparingly.</span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 16px;">
+      <div style="border-radius: 8px; overflow: hidden; border: 1px solid #2A2F39;"><div style="background: #FF5A2B; height: 104px;"></div><div style="background: #16191F; padding: 14px; display: flex; flex-direction: column; gap: 4px;"><div style="font-size: 13px; font-weight: 600;">Ember</div><div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #9AA0AA;">#FF5A2B</div><div style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #6B7280;">accent, run, focus</div></div></div>
+      <div style="border-radius: 8px; overflow: hidden; border: 1px solid #2A2F39;"><div style="background: #C43D18; height: 104px;"></div><div style="background: #16191F; padding: 14px; display: flex; flex-direction: column; gap: 4px;"><div style="font-size: 13px; font-weight: 600;">Ember deep</div><div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #9AA0AA;">#C43D18</div><div style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #6B7280;">pressed state</div></div></div>
+      <div style="border-radius: 8px; overflow: hidden; border: 1px solid #2A2F39;"><div style="background: #0F1115; height: 104px;"></div><div style="background: #16191F; padding: 14px; display: flex; flex-direction: column; gap: 4px;"><div style="font-size: 13px; font-weight: 600;">Obsidian</div><div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #9AA0AA;">#0F1115</div><div style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #6B7280;">editor canvas</div></div></div>
+      <div style="border-radius: 8px; overflow: hidden; border: 1px solid #2A2F39;"><div style="background: #F5F3EE; height: 104px;"></div><div style="background: #16191F; padding: 14px; display: flex; flex-direction: column; gap: 4px;"><div style="font-size: 13px; font-weight: 600;">Paper</div><div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #9AA0AA;">#F5F3EE</div><div style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #6B7280;">light theme, print</div></div></div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(8, 1fr); gap: 12px; margin-bottom: 16px;">
+      <div style="border-radius: 6px; overflow: hidden; border: 1px solid #2A2F39;"><div style="background: #0F1115; height: 56px;"></div><div style="background: #16191F; padding: 10px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: #9AA0AA;">bg&nbsp;0F1115</div></div>
+      <div style="border-radius: 6px; overflow: hidden; border: 1px solid #2A2F39;"><div style="background: #16191F; height: 56px;"></div><div style="background: #16191F; padding: 10px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: #9AA0AA;">s1&nbsp;16191F</div></div>
+      <div style="border-radius: 6px; overflow: hidden; border: 1px solid #2A2F39;"><div style="background: #1E222A; height: 56px;"></div><div style="background: #16191F; padding: 10px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: #9AA0AA;">s2&nbsp;1E222A</div></div>
+      <div style="border-radius: 6px; overflow: hidden; border: 1px solid #2A2F39;"><div style="background: #2A2F39; height: 56px;"></div><div style="background: #16191F; padding: 10px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: #9AA0AA;">line&nbsp;2A2F39</div></div>
+      <div style="border-radius: 6px; overflow: hidden; border: 1px solid #2A2F39;"><div style="background: #6B7280; height: 56px;"></div><div style="background: #16191F; padding: 10px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: #9AA0AA;">dim&nbsp;6B7280</div></div>
+      <div style="border-radius: 6px; overflow: hidden; border: 1px solid #2A2F39;"><div style="background: #9AA0AA; height: 56px;"></div><div style="background: #16191F; padding: 10px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: #9AA0AA;">mut&nbsp;9AA0AA</div></div>
+      <div style="border-radius: 6px; overflow: hidden; border: 1px solid #2A2F39;"><div style="background: #E8E6E1; height: 56px;"></div><div style="background: #16191F; padding: 10px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: #9AA0AA;">txt&nbsp;E8E6E1</div></div>
+      <div style="border-radius: 6px; overflow: hidden; border: 1px solid #2A2F39;"><div style="background: #FFFFFF; height: 56px;"></div><div style="background: #16191F; padding: 10px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: #9AA0AA;">hi&nbsp;FFFFFF</div></div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 96px;">
+      <div style="background: #16191F; border: 1px solid #2A2F39; border-radius: 8px; padding: 24px; display: flex; flex-direction: column; gap: 16px;">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #6B7280;">Status</div>
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <div style="display: flex; align-items: center; gap: 12px;"><span style="width: 16px; height: 16px; border-radius: 3px; background: #5FBF7A;"></span><span style="font-size: 13px;">Success</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #6B7280; margin-left: auto;">#5FBF7A</span></div>
+          <div style="display: flex; align-items: center; gap: 12px;"><span style="width: 16px; height: 16px; border-radius: 3px; background: #F0B429;"></span><span style="font-size: 13px;">Warning</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #6B7280; margin-left: auto;">#F0B429</span></div>
+          <div style="display: flex; align-items: center; gap: 12px;"><span style="width: 16px; height: 16px; border-radius: 3px; background: #E5484D;"></span><span style="font-size: 13px;">Error</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #6B7280; margin-left: auto;">#E5484D</span></div>
+          <div style="display: flex; align-items: center; gap: 12px; white-space: nowrap;"><span style="width: 16px; height: 16px; border-radius: 3px; background: #5AD1E6; flex: none;"></span><span style="font-size: 13px;">Info</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #6B7280; margin-left: auto;">#5AD1E6</span></div>
+        </div>
+      </div>
+      <div style="background: #0F1115; border: 1px solid #2A2F39; border-radius: 8px; padding: 24px; display: flex; flex-direction: column; gap: 16px;">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #6B7280;">Syntax — &ldquo;Claven Dark&rdquo;</div>
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 1.85;">
+          <div style="white-space: pre;"><span style="color: #6B7280;">// cleave a buffer into panes</span></div>
+          <div style="white-space: pre;"><span style="color: #FF5A2B;">export function</span> <span style="color: #5AD1E6;">cleave</span>(<span style="color: #E8E6E1;">buf</span>: <span style="color: #C8A2FF;">Buffer</span>, <span style="color: #E8E6E1;">at</span> = <span style="color: #F0B429;">0.5</span>) {</div>
+          <div style="white-space: pre;">  <span style="color: #FF5A2B;">if</span> (at &lt;= <span style="color: #F0B429;">0</span>) <span style="color: #FF5A2B;">throw new</span> <span style="color: #C8A2FF;">RangeError</span>(<span style="color: #5FBF7A;">"bad split"</span>)</div>
+          <div style="white-space: pre;">  <span style="color: #FF5A2B;">return</span> buf.<span style="color: #5AD1E6;">split</span>(at)</div>
+          <div style="white-space: pre;">}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 04 TYPE ===== -->
+  <div style="max-width: 1120px; margin: 0 auto; padding: 0 40px;">
+    <div style="display: flex; align-items: baseline; gap: 16px; padding-bottom: 24px; border-bottom: 1px solid #2A2F39; margin-bottom: 40px;">
+      <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #FF5A2B;">04</span>
+      <h2 style="margin: 0; font-family: 'Space Grotesk', sans-serif; font-size: 26px; font-weight: 600; letter-spacing: -0.01em;">Typography</h2>
+      <span style="font-size: 13px; color: #6B7280;">Three faces, no more</span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-bottom: 24px;">
+      <div style="background: #16191F; border: 1px solid #2A2F39; border-radius: 8px; padding: 28px; display: flex; flex-direction: column; gap: 14px;">
+        <div style="font-family: 'Space Grotesk', sans-serif; font-size: 40px; font-weight: 600; letter-spacing: -0.02em;">Aa</div>
+        <div style="font-size: 14px; font-weight: 600;">Space Grotesk</div>
+        <div style="font-size: 12.5px; line-height: 1.6; color: #9AA0AA;">Wordmark (500, +0.30em, uppercase) and display headings (600, &minus;0.02em).</div>
+      </div>
+      <div style="background: #16191F; border: 1px solid #2A2F39; border-radius: 8px; padding: 28px; display: flex; flex-direction: column; gap: 14px;">
+        <div style="font-family: 'IBM Plex Sans', sans-serif; font-size: 40px; font-weight: 500;">Aa</div>
+        <div style="font-size: 14px; font-weight: 600;">IBM Plex Sans</div>
+        <div style="font-size: 12.5px; line-height: 1.6; color: #9AA0AA;">All product UI: menus, panels, labels, body copy. 400/500/600 only.</div>
+      </div>
+      <div style="background: #16191F; border: 1px solid #2A2F39; border-radius: 8px; padding: 28px; display: flex; flex-direction: column; gap: 14px;">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 40px; font-weight: 500;">Aa</div>
+        <div style="font-size: 14px; font-weight: 600;">JetBrains Mono</div>
+        <div style="font-size: 12.5px; line-height: 1.6; color: #9AA0AA;">Editor, terminal, paths, keybindings, metadata micro-labels.</div>
+      </div>
+    </div>
+
+    <div style="background: #16191F; border: 1px solid #2A2F39; border-radius: 8px; padding: 36px 40px; display: flex; flex-direction: column; gap: 26px; margin-bottom: 96px;">
+      <div style="display: flex; align-items: baseline; gap: 28px;"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #6B7280; width: 132px; flex: none;">display/46/600</span><span style="font-family: 'Space Grotesk', sans-serif; font-size: 46px; font-weight: 600; letter-spacing: -0.025em; line-height: 1.05;">Build the editor</span></div>
+      <div style="display: flex; align-items: baseline; gap: 28px;"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #6B7280; width: 132px; flex: none;">h1/34/600</span><span style="font-family: 'Space Grotesk', sans-serif; font-size: 34px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.15;">Panes, not tabs</span></div>
+      <div style="display: flex; align-items: baseline; gap: 28px;"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #6B7280; width: 132px; flex: none;">h2/26/600</span><span style="font-family: 'Space Grotesk', sans-serif; font-size: 26px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.2;">Command palette</span></div>
+      <div style="display: flex; align-items: baseline; gap: 28px;"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #6B7280; width: 132px; flex: none;">h3/20/600</span><span style="font-family: 'IBM Plex Sans', sans-serif; font-size: 20px; font-weight: 600; line-height: 1.3;">Workspace settings</span></div>
+      <div style="display: flex; align-items: baseline; gap: 28px;"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #6B7280; width: 132px; flex: none;">body/16/400</span><span style="font-family: 'IBM Plex Sans', sans-serif; font-size: 16px; line-height: 1.6; color: #E8E6E1;">Claven opens a 2&nbsp;GB repository in under a second.</span></div>
+      <div style="display: flex; align-items: baseline; gap: 28px;"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #6B7280; width: 132px; flex: none;">ui/13/500</span><span style="font-family: 'IBM Plex Sans', sans-serif; font-size: 13px; font-weight: 500; line-height: 1.45;">Split editor right</span></div>
+      <div style="display: flex; align-items: baseline; gap: 28px;"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #6B7280; width: 132px; flex: none;">code/13.5/400</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 13.5px; line-height: 1.65;">src/core/buffer.rs:214</span></div>
+      <div style="display: flex; align-items: baseline; gap: 28px;"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #6B7280; width: 132px; flex: none;">micro/10/500</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase;">Problems &middot; 0</span></div>
+    </div>
+  </div>
+
+  <!-- ===== 05 TOKENS + UI ===== -->
+  <div style="max-width: 1120px; margin: 0 auto; padding: 0 40px;">
+    <div style="display: flex; align-items: baseline; gap: 16px; padding-bottom: 24px; border-bottom: 1px solid #2A2F39; margin-bottom: 40px;">
+      <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #FF5A2B;">05</span>
+      <h2 style="margin: 0; font-family: 'Space Grotesk', sans-serif; font-size: 26px; font-weight: 600; letter-spacing: -0.01em;">Tokens in use</h2>
+      <span style="font-size: 13px; color: #6B7280;">Tight radii, 4px spacing grid, fast motion</span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px;">
+      <div style="background: #16191F; border: 1px solid #2A2F39; border-radius: 8px; padding: 28px; display: flex; flex-direction: column; gap: 22px;">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #6B7280;">Radius &amp; spacing</div>
+        <div style="display: flex; gap: 14px; align-items: flex-end;">
+          <div style="display: flex; flex-direction: column; gap: 8px; align-items: center;"><div style="width: 52px; height: 52px; background: #1E222A; border: 1px solid #2A2F39; border-radius: 2px;"></div><span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #9AA0AA;">xs 2</span></div>
+          <div style="display: flex; flex-direction: column; gap: 8px; align-items: center;"><div style="width: 52px; height: 52px; background: #1E222A; border: 1px solid #2A2F39; border-radius: 4px;"></div><span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #9AA0AA;">sm 4</span></div>
+          <div style="display: flex; flex-direction: column; gap: 8px; align-items: center;"><div style="width: 52px; height: 52px; background: #1E222A; border: 1px solid #2A2F39; border-radius: 6px;"></div><span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #9AA0AA;">md 6</span></div>
+          <div style="display: flex; flex-direction: column; gap: 8px; align-items: center;"><div style="width: 52px; height: 52px; background: #1E222A; border: 1px solid #2A2F39; border-radius: 10px;"></div><span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #9AA0AA;">lg 10</span></div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 7px;">
+          <div style="display: flex; align-items: center; gap: 10px;"><div style="height: 8px; width: 4px; background: #FF5A2B;"></div><span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: #9AA0AA;">4 &middot; 8 &middot; 12 &middot; 16 &middot; 24 &middot; 32 &middot; 48 &middot; 64 &middot; 96</span></div>
+          <div style="display: flex; align-items: flex-end; gap: 6px; height: 40px;"><div style="width: 4px; height: 4px; background: #2A2F39;"></div><div style="width: 8px; height: 8px; background: #2A2F39;"></div><div style="width: 12px; height: 12px; background: #2A2F39;"></div><div style="width: 16px; height: 16px; background: #2A2F39;"></div><div style="width: 24px; height: 24px; background: #2A2F39;"></div><div style="width: 32px; height: 32px; background: #2A2F39;"></div><div style="width: 40px; height: 40px; background: #2A2F39;"></div></div>
+        </div>
+      </div>
+      <div style="background: #16191F; border: 1px solid #2A2F39; border-radius: 8px; padding: 28px; display: flex; flex-direction: column; gap: 22px;">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #6B7280;">Controls</div>
+        <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center;">
+          <button style="font-family: 'IBM Plex Sans', sans-serif; font-size: 13px; font-weight: 500; color: #0F1115; background: #FF5A2B; border: 0; border-radius: 4px; padding: 9px 16px; cursor: pointer; transition: background 120ms cubic-bezier(.2,0,0,1);" style-hover="background: #FF7248;" style-active="background: #C43D18;">Run</button>
+          <button style="font-family: 'IBM Plex Sans', sans-serif; font-size: 13px; font-weight: 500; color: #E8E6E1; background: #1E222A; border: 1px solid #2A2F39; border-radius: 4px; padding: 8px 16px; cursor: pointer; transition: border-color 120ms cubic-bezier(.2,0,0,1);" style-hover="border-color: #4A515E;">Open folder</button>
+          <button style="font-family: 'IBM Plex Sans', sans-serif; font-size: 13px; font-weight: 500; color: #9AA0AA; background: transparent; border: 0; border-radius: 4px; padding: 9px 12px; cursor: pointer; transition: color 120ms;" style-hover="color: #E8E6E1;">Cancel</button>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #9AA0AA; background: #1E222A; border: 1px solid #2A2F39; border-bottom-width: 2px; border-radius: 4px; padding: 4px 7px;">&#8984;K</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px; background: #1E222A; border: 1px solid #FF5A2B; border-radius: 4px; padding: 10px 12px;">
+          <svg width="13" height="13" viewBox="0 0 96 96" style="flex: none;"><path d="M8 8 H62 L34 88 H8 Z" fill="#9AA0AA"></path><path d="M72 8 H88 V88 H44 Z" fill="#FF5A2B"></path></svg>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: #E8E6E1;">split editor right</span>
+          <span style="width: 1.5px; height: 15px; background: #FF5A2B; margin-left: -4px;"></span>
+        </div>
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.9; color: #9AA0AA;">
+          <div><span style="color:#6B7280;">motion</span> &nbsp;120ms micro &middot; 200ms panel &middot; cubic-bezier(.2,0,0,1)</div>
+          <div><span style="color:#6B7280;">focus</span> &nbsp;&nbsp;1px ember border, no glow, no offset ring</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="background: #0F1115; border: 1px solid #2A2F39; border-radius: 8px; overflow: hidden; margin-bottom: 96px;">
+      <div style="display: flex; align-items: center; gap: 12px; background: #16191F; border-bottom: 1px solid #2A2F39; padding: 0 14px; height: 38px;">
+        <svg width="15" height="15" viewBox="0 0 96 96"><path d="M8 8 H62 L34 88 H8 Z" fill="#F5F3EE"></path><path d="M72 8 H88 V88 H44 Z" fill="#FF5A2B"></path></svg>
+        <span style="font-family: 'IBM Plex Sans', sans-serif; font-size: 12.5px; color: #9AA0AA;">claven &mdash; core/buffer.rs</span>
+        <span style="margin-left: auto; font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #6B7280;">Application chrome, 38px</span>
+      </div>
+      <div style="display: flex; height: 190px;">
+        <div style="width: 200px; border-right: 1px solid #2A2F39; padding: 14px 12px; display: flex; flex-direction: column; gap: 9px; background: #12151A;">
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #6B7280;">Explorer</div>
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #9AA0AA;">src/</div>
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #E8E6E1; background: #1E222A; border-left: 2px solid #FF5A2B; padding: 3px 8px; margin-left: 10px;">buffer.rs</div>
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #9AA0AA; padding: 3px 8px; margin-left: 10px;">pane.rs</div>
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #9AA0AA; padding: 3px 8px; margin-left: 10px;">lsp.rs</div>
+        </div>
+        <div style="flex: 1; padding: 16px 20px; display: flex; gap: 16px;">
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 1.75; color: #3A4049; text-align: right;">
+            <div>212</div>
+            <div>213</div>
+            <div>214</div>
+            <div>215</div>
+          </div>
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 1.75;">
+            <div style="white-space: pre;"><span style="color: #FF5A2B;">impl</span> <span style="color: #C8A2FF;">Buffer</span> {</div>
+            <div style="white-space: pre;">  <span style="color: #FF5A2B;">pub fn</span> <span style="color: #5AD1E6;">cleave</span>(&amp;<span style="color: #FF5A2B;">mut</span> <span style="color: #E8E6E1;">self</span>) -&gt; <span style="color: #C8A2FF;">Pane</span> {</div>
+            <div style="white-space: pre;">    <span style="color: #E8E6E1;">self</span>.<span style="color: #5AD1E6;">split</span>(<span style="color: #C8A2FF;">Axis</span>::<span style="color: #E8E6E1;">Vertical</span>)</div>
+            <div style="white-space: pre;">  }</div>
+          </div>
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 18px; border-top: 1px solid #2A2F39; background: #16191F; padding: 0 14px; height: 26px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: #6B7280;">
+        <span style="color: #5FBF7A;">&#9679; ok</span><span>rust-analyzer</span><span>Ln 214, Col 5</span><span style="margin-left: auto;">UTF-8</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 06 VOICE ===== -->
+  <div style="max-width: 1120px; margin: 0 auto; padding: 0 40px;">
+    <div style="display: flex; align-items: baseline; gap: 16px; padding-bottom: 24px; border-bottom: 1px solid #2A2F39; margin-bottom: 40px;">
+      <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #FF5A2B;">06</span>
+      <h2 style="margin: 0; font-family: 'Space Grotesk', sans-serif; font-size: 26px; font-weight: 600; letter-spacing: -0.01em;">Voice</h2>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px;">
+      <div style="background: #16191F; border: 1px solid #2A2F39; border-radius: 8px; padding: 28px; display: flex; flex-direction: column; gap: 10px;">
+        <div style="font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 600;">Terse</div>
+        <div style="font-size: 13.5px; line-height: 1.65; color: #9AA0AA;">&ldquo;Opened 2.1 GB in 0.8s.&rdquo; Not &ldquo;We&rsquo;re excited to help you open large repos!&rdquo;</div>
+      </div>
+      <div style="background: #16191F; border: 1px solid #2A2F39; border-radius: 8px; padding: 28px; display: flex; flex-direction: column; gap: 10px;">
+        <div style="font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 600;">Mechanical, not magical</div>
+        <div style="font-size: 13.5px; line-height: 1.65; color: #9AA0AA;">Claven says what it did and how long it took. No exclamation marks, no emoji, no &ldquo;oops&rdquo;.</div>
+      </div>
+      <div style="background: #16191F; border: 1px solid #2A2F39; border-radius: 8px; padding: 28px; display: flex; flex-direction: column; gap: 10px;">
+        <div style="font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 600;">Lowercase in-product</div>
+        <div style="font-size: 13.5px; line-height: 1.65; color: #9AA0AA;">Commands and status read lowercase (&ldquo;split editor right&rdquo;); marketing headlines use sentence case.</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</x-dc>
+</body>
+</html>

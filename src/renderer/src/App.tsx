@@ -113,14 +113,14 @@ export default function App(): React.JSX.Element {
       <FileTree root={root} activePath={activePath} onOpenFile={(p) => void openFile(p)} onOpenFolder={() => void openFolder()} />
 
       <main className="flex min-w-0 flex-1 flex-col">
-        <div className="border-edge flex h-9 shrink-0 items-stretch overflow-x-auto border-b">
+        <div className="border-line flex h-9 shrink-0 items-stretch overflow-x-auto border-b">
           {tabs.map((tab) => {
             const dirty = tab.content !== tab.saved
             return (
               <div
                 key={tab.path}
-                className={`border-edge flex shrink-0 items-center gap-2 border-e px-3 text-[13px] ${
-                  tab.path === activePath ? 'bg-surface text-ink' : 'text-ink-dim hover:bg-white/5'
+                className={`border-line flex shrink-0 items-center gap-2 border-e px-3 text-[13px] ${
+                  tab.path === activePath ? 'bg-obsidian text-ink' : 'text-ink-muted hover:bg-white/5'
                 }`}
               >
                 <button onClick={() => setActivePath(tab.path)} dir="auto" className="max-w-48 truncate">
@@ -152,21 +152,21 @@ export default function App(): React.JSX.Element {
               onSave={() => void save()}
             />
           ) : (
-            <div className="text-ink-dim flex h-full items-center justify-center text-sm">
+            <div className="text-ink-muted flex h-full items-center justify-center text-sm">
               {root === null ? 'open a folder to start' : 'select a file'}
             </div>
           )}
         </div>
 
-        <footer className="border-edge text-ink-dim flex h-7 shrink-0 items-center gap-4 border-t px-3 text-xs">
+        <footer className="border-line text-ink-muted flex h-7 shrink-0 items-center gap-4 border-t px-3 text-xs">
           {active && (
             <>
               <span>{active.meta.lineEnding.toUpperCase()}</span>
               <span>{active.meta.encoding}</span>
-              {active.content !== active.saved && <span className="text-good">unsaved — Ctrl+S</span>}
+              {active.content !== active.saved && <span className="text-ember">unsaved — Ctrl+S</span>}
             </>
           )}
-          {notice && <span className={notice.kind === 'error' ? 'text-bad' : ''}>{notice.text}</span>}
+          {notice && <span className={notice.kind === 'error' ? 'text-error' : ''}>{notice.text}</span>}
         </footer>
       </main>
     </div>

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <title>Claven</title>
+  <rect width="512" height="512" rx="114" fill="#0F1115"></rect>
+  <g transform="translate(112 112) scale(3)">
+    <path d="M8 8 H62 L34 88 H8 Z" fill="#F5F3EE"></path>
+    <path d="M72 8 H88 V88 H44 Z" fill="#FF5A2B"></path>
+  </g>
+</svg>

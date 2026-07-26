@@ -13,7 +13,7 @@ import { markdown } from '@codemirror/lang-markdown'
 import { html } from '@codemirror/lang-html'
 import { css } from '@codemirror/lang-css'
 import { rust } from '@codemirror/lang-rust'
-import { oneDark } from '@codemirror/theme-one-dark'
+import { clavenDark } from './clavenDark'
 
 /**
  * THE ADAPTER. This is the only file in the app permitted to import
@@ -111,6 +111,8 @@ export function CodeMirrorEditor({ value, language, onChange, onSave }: Props): 
         bracketMatching(),
         highlightActiveLine(),
         highlightSelectionMatches(),
+        // Fallback only — clavenDark's HighlightStyle takes precedence for any
+        // tag it defines. This keeps unstyled tags from rendering flat.
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
         // Per-line base direction. This is the whole reason Arabic and Hebrew
         // render correctly here and do not in Zed (RTL tracking issue: 2 of 52
@@ -135,8 +137,7 @@ export function CodeMirrorEditor({ value, language, onChange, onSave }: Props): 
         EditorView.updateListener.of((update) => {
           if (update.docChanged) latestChange.current(update.state.doc.toString())
         }),
-        EditorView.theme({ '&': { height: '100%' }, '.cm-scroller': { overflow: 'auto' } }),
-        oneDark,
+        clavenDark,
         ...languageExtension(language)
       ]
     })

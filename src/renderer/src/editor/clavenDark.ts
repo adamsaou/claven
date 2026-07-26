@@ -1,0 +1,112 @@
+import { EditorView } from '@codemirror/view'
+import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
+import { tags as t } from '@lezer/highlight'
+import type { Extension } from '@codemirror/state'
+
+/**
+ * "Claven Dark" — the syntax theme from brand/BRAND.md section 2.
+ *
+ * Every value here is quoted from the brand guide. If a token is needed that
+ * the guide does not define, it goes in the guide first. Ember is load-bearing
+ * and scarce: it is the cursor and keywords, nothing else in the editor.
+ */
+const OBSIDIAN = '#0F1115'
+const SURFACE_1 = '#16191F'
+const SURFACE_2 = '#1E222A'
+const LINE = '#2A2F39'
+const TEXT = '#E8E6E1'
+const EMBER = '#FF5A2B'
+
+const SYNTAX = {
+  comment: '#6B7280',
+  keyword: EMBER,
+  string: '#5FBF7A',
+  number: '#F0B429',
+  function: '#5AD1E6',
+  type: '#C8A2FF',
+  variable: TEXT,
+  lineNumber: '#3A4049',
+  selection: SURFACE_2
+}
+
+const theme = EditorView.theme(
+  {
+    '&': {
+      color: TEXT,
+      backgroundColor: OBSIDIAN,
+      height: '100%',
+      // Brand type scale: code is 13.5px / 1.65.
+      fontSize: '13.5px'
+    },
+    '.cm-content': {
+      caretColor: EMBER,
+      fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, monospace",
+      lineHeight: '1.65'
+    },
+    '.cm-scroller': { overflow: 'auto', fontFamily: 'inherit', lineHeight: 'inherit' },
+
+    // Cursor is ember and 2px — it is one of the few places the accent is spent.
+    '.cm-cursor, .cm-dropCursor': { borderLeft: `2px solid ${EMBER}` },
+
+    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
+      backgroundColor: SYNTAX.selection
+    },
+    '.cm-selectionMatch': { backgroundColor: LINE },
+
+    '.cm-gutters': {
+      backgroundColor: OBSIDIAN,
+      color: SYNTAX.lineNumber,
+      // 1px borders, no shadows in product chrome.
+      borderRight: `1px solid ${LINE}`
+    },
+    '.cm-activeLineGutter': { backgroundColor: SURFACE_1, color: TEXT },
+    '.cm-activeLine': { backgroundColor: SURFACE_1 },
+    '.cm-foldPlaceholder': {
+      backgroundColor: SURFACE_2,
+      border: `1px solid ${LINE}`,
+      color: SYNTAX.comment
+    },
+
+    '.cm-matchingBracket, &.cm-focused .cm-matchingBracket': {
+      backgroundColor: SURFACE_2,
+      outline: `1px solid ${LINE}`
+    },
+    '.cm-nonmatchingBracket': { color: '#E5484D' },
+
+    '.cm-panels': { backgroundColor: SURFACE_1, color: TEXT, borderTop: `1px solid ${LINE}` },
+    '.cm-searchMatch': { backgroundColor: SURFACE_2, outline: `1px solid ${LINE}` },
+    '.cm-searchMatch.cm-searchMatch-selected': { backgroundColor: EMBER, color: OBSIDIAN },
+
+    '.cm-tooltip': {
+      backgroundColor: SURFACE_2,
+      border: `1px solid ${LINE}`,
+      borderRadius: '4px'
+    }
+  },
+  { dark: true }
+)
+
+const highlight = HighlightStyle.define([
+  { tag: [t.comment, t.lineComment, t.blockComment, t.docComment], color: SYNTAX.comment, fontStyle: 'italic' },
+  {
+    tag: [t.keyword, t.controlKeyword, t.moduleKeyword, t.operatorKeyword, t.definitionKeyword, t.modifier, t.self, t.null],
+    color: SYNTAX.keyword
+  },
+  { tag: [t.string, t.special(t.string), t.regexp, t.character], color: SYNTAX.string },
+  { tag: [t.number, t.integer, t.float, t.bool, t.literal], color: SYNTAX.number },
+  { tag: [t.function(t.variableName), t.function(t.propertyName), t.macroName, t.labelName], color: SYNTAX.function },
+  { tag: [t.typeName, t.className, t.namespace, t.tagName, t.annotation], color: SYNTAX.type },
+  { tag: [t.variableName, t.propertyName, t.attributeName, t.definition(t.variableName)], color: SYNTAX.variable },
+
+  // Not specified by the brand guide, so kept deliberately neutral rather than
+  // invented — punctuation and operators recede so ember stays scarce.
+  { tag: [t.operator, t.punctuation, t.bracket, t.separator, t.derefOperator], color: '#9AA0AA' },
+  { tag: [t.meta, t.processingInstruction], color: SYNTAX.comment },
+  { tag: t.invalid, color: '#E5484D' },
+  { tag: [t.heading, t.strong], fontWeight: '600', color: TEXT },
+  { tag: t.emphasis, fontStyle: 'italic' },
+  { tag: t.strikethrough, textDecoration: 'line-through' },
+  { tag: t.link, color: '#5AD1E6', textDecoration: 'underline' }
+])
+
+export const clavenDark: Extension = [theme, syntaxHighlighting(highlight)]

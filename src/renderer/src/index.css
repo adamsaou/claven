@@ -1,15 +1,67 @@
 @import 'tailwindcss';
 
+/* Brand faces, self-hosted. Never a CDN: Claven has to work with the internet
+   unplugged, and a webfont URL would also be blocked by the renderer's CSP.
+   Only the weights the brand guide actually specifies are imported. */
+@import '@fontsource/space-grotesk/500.css';
+@import '@fontsource/space-grotesk/600.css';
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/500.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/500.css';
+
+/*
+ * Claven brand tokens. Canonical source: brand/BRAND.md and brand/tokens/tokens.css.
+ * Do not invent values here — if something is missing, it belongs in the brand
+ * guide first. Identity is "precision instrument": flat geometry, dark-first,
+ * one hot accent, no gradients, no glows.
+ */
 @theme {
-  --color-surface: #101014;
-  --color-surface-raised: #17171d;
-  --color-edge: #26262f;
-  --color-ink: #e6e6ec;
-  --color-ink-dim: #8b8b99;
-  --color-good: #6ee7a8;
-  --color-bad: #ff7a7a;
-  --font-mono:
-    'Cascadia Code', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --color-ember: #ff5a2b;
+  --color-ember-hover: #ff7248;
+  --color-ember-deep: #c43d18;
+  --color-obsidian: #0f1115;
+  --color-paper: #f5f3ee;
+
+  --color-surface-1: #16191f;
+  --color-surface-2: #1e222a;
+  --color-line: #2a2f39;
+
+  /* Brand calls these Text / Text muted / Text dim. Renamed to `ink` here only
+     so the Tailwind utilities read as text-ink rather than text-text. Values are
+     unchanged from brand/tokens/tokens.css. */
+  --color-ink: #e8e6e1;
+  --color-ink-muted: #9aa0aa;
+  --color-ink-dim: #6b7280;
+
+  --color-success: #5fbf7a;
+  --color-warning: #f0b429;
+  --color-error: #e5484d;
+  --color-info: #5ad1e6;
+
+  --font-display: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-ui: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
+
+  /* Tight radii. The app icon's 22% is the only large radius in the system. */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+
+  /* 120ms micro, 200ms panel. Focus is a 1px ember border, never a glowing ring. */
+  --ease-brand: cubic-bezier(0.2, 0, 0, 1);
+}
+
+:root {
+  --dur-micro: 120ms;
+  --dur-panel: 200ms;
+
+  /* Chrome metrics from the brand guide, so panels cannot drift apart. */
+  --titlebar-h: 38px;
+  --statusbar-h: 26px;
+  --sidebar-w: 200px;
 }
 
 html,
@@ -20,8 +72,25 @@ body,
 
 body {
   margin: 0;
-  background: var(--color-surface);
-  color: var(--color-ink);
-  font-family: var(--font-mono);
+  background: var(--color-obsidian);
+  color: var(--color-text);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 500;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Never a glowing ring — 1px ember, per the brand guide. */
+:focus-visible {
+  outline: 1px solid var(--color-ember);
+  outline-offset: -1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
