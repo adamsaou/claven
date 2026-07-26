@@ -102,8 +102,13 @@ export function FileTree({ root, activePath, onOpenFile, onOpenFolder }: Props):
   }, [root])
 
   return (
-    <nav className="border-line bg-surface-1 flex h-full w-64 shrink-0 flex-col border-e"
-         style={{ width: 'var(--sidebar-w)' }}>
+    {/* Width comes from --sidebar-w (200px, per BRAND.md chrome metrics).
+        No w-* class here — two sources of truth for one width is how chrome
+        metrics quietly drift apart. */}
+    <nav
+      className="border-line bg-surface-1 flex h-full shrink-0 flex-col border-e"
+      style={{ width: 'var(--sidebar-w)' }}
+    >
       <div className="border-line flex items-center justify-between border-b px-3 py-2">
         <span className="text-ink-muted truncate text-xs uppercase tracking-wide">
           {root === null ? 'no folder' : root.split(/[\\/]/).pop()}
