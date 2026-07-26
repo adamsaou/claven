@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { TitleBar } from './TitleBar'
 import { FileTree } from './FileTree'
+import { CommandPalette, type Command } from './CommandPalette'
 import { CodeMirrorEditor, languageForPath, type CursorPosition } from './editor/CodeMirrorEditor'
 import type { FileMeta } from '../../shared/files'
 
@@ -36,6 +37,8 @@ export default function App(): React.JSX.Element {
   const [activePath, setActivePath] = useState<string | null>(null)
   const [notice, setNotice] = useState<Notice>(null)
   const [cursor, setCursor] = useState<CursorPosition>({ line: 1, column: 1, selected: 0 })
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [sidebarVisible, setSidebarVisible] = useState(true)
   const activeTabRef = useRef<HTMLDivElement>(null)
 
   const active = tabs.find((tab) => tab.path === activePath) ?? null
@@ -137,17 +140,97 @@ export default function App(): React.JSX.Element {
     })
   }, [])
 
+  const cycleTab = useCallback(
+    (delta: number) => {
+      setActivePath((current) => {
+        if (tabs.length === 0) return null
+        const index = tabs.findIndex((tab) => tab.path === current)
+        const next = (index + delta + tabs.length) % tabs.length
+        return tabs[next]?.path ?? current
+      })
+    },
+    [tabs]
+  )
+
+  // Titles are lowercase and verb-first, per the BRAND.md voice.
+  const commands = useMemo<Command[]>(
+    () => [
+      { id: 'workspace.open', title: 'open folder', keys: 'ctrl+k o', run: () => void openFolder() },
+      { id: 'file.save', title: 'save file', keys: 'ctrl+s', enabled: dirty, run: () => void save() },
+      {
+        id: 'view.toggleSidebar',
+        title: 'toggle sidebar',
+        keys: 'ctrl+b',
+        run: () => setSidebarVisible((visible) => !visible)
+      },
+      {
+        id: 'tab.close',
+        title: 'close tab',
+        keys: 'ctrl+w',
+        enabled: active !== null,
+        run: () => active && closeTab(active.path)
+      },
+      {
+        id: 'tab.closeAll',
+        title: 'close all tabs',
+        enabled: tabs.length > 0,
+        run: () => {
+          setTabs([])
+          setActivePath(null)
+        }
+      },
+      { id: 'tab.next', title: 'next tab', keys: 'ctrl+tab', enabled: tabs.length > 1, run: () => cycleTab(1) },
+      {
+        id: 'tab.previous',
+        title: 'previous tab',
+        keys: 'ctrl+shift+tab',
+        enabled: tabs.length > 1,
+        run: () => cycleTab(-1)
+      }
+    ],
+    [openFolder, save, dirty, active, closeTab, tabs.length, cycleTab]
+  )
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      const mod = event.ctrlKey || event.metaKey
+      if (!mod) return
+
+      // ctrl+shift+p matches every editor's muscle memory. Fighting that is a
+      // cost with no upside.
+      if (event.shiftKey && event.key.toLowerCase() === 'p') {
+        event.preventDefault()
+        setPaletteOpen((open) => !open)
+      } else if (event.key.toLowerCase() === 'b') {
+        event.preventDefault()
+        setSidebarVisible((visible) => !visible)
+      } else if (event.key.toLowerCase() === 'w') {
+        event.preventDefault()
+        if (active) closeTab(active.path)
+      } else if (event.key === 'Tab') {
+        event.preventDefault()
+        cycleTab(event.shiftKey ? -1 : 1)
+      }
+      // ctrl+s is bound inside CodeMirror's keymap so it works while typing;
+      // duplicating it here would fire the save twice.
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [active, closeTab, cycleTab])
+
   return (
-    <div className="flex h-full flex-col">
+    <div className="relative flex h-full flex-col">
       <TitleBar root={root} />
 
       <div className="flex min-h-0 flex-1">
-        <FileTree
-          root={root}
-          activePath={activePath}
-          onOpenFile={(path) => void openFile(path)}
-          onOpenFolder={() => void openFolder()}
-        />
+        {sidebarVisible && (
+          <FileTree
+            root={root}
+            activePath={activePath}
+            onOpenFile={(path) => void openFile(path)}
+            onOpenFolder={() => void openFolder()}
+          />
+        )}
 
         <main className="bg-obsidian flex min-w-0 flex-1 flex-col">
         <div
@@ -240,6 +323,12 @@ export default function App(): React.JSX.Element {
           </footer>
         </main>
       </div>
+
+      <CommandPalette
+        open={paletteOpen}
+        commands={commands}
+        onClose={() => setPaletteOpen(false)}
+      />
     </div>
   )
 }
