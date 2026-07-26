@@ -34,15 +34,36 @@ configs, TURN credentials and keys stay out, permanently.
 | | |
 |---|---|
 | Name | Claven. Coined, no meaning. Naming is **closed** — don't reopen it. |
-| License | Apache-2.0, in the initial commit |
+| Who it's for | **Me first.** Then semi-open-source and sold to developers. Dogfooding is the product strategy, not just a testing phase. |
+| License (current) | Apache-2.0. See the licensing note below before assuming this is permanent. |
 | Repo | Public from day one. Single repo, single package. |
-| Contributions | No outside code PRs yet — sole copyright keeps relicensing possible |
+| Contributions | **No outside code without a CLA.** This is now load-bearing — see below. |
+| Shell | Electron. Cross-platform is a priority and Tauri means three engines, with the broken one (WebKitGTK) invisible from a Windows dev loop. Electron 43 drops 32-bit/armv7 on 2027-01-05; nothing here targets those. |
 | Devlog | Ship the milestone, *then* film. Never build for the thumbnail. No schedule commitments. |
 | UI layer | React + TypeScript + Vite + Tailwind. Cheap and swappable, not worth debating. |
 | Syntax | tree-sitter |
 | Language intel | LSP over JSON-RPC on stdio. v1 servers: `typescript-language-server`, `clangd`. Nothing else. |
 | AI agents | ACP (Agent Client Protocol). Premise-neutral. |
 | Terminal | xterm.js frontend |
+
+### Licensing — read before touching the license or accepting a PR
+
+The plan is to sell this eventually. Two things follow, and they pull opposite ways.
+
+**Anything already published under Apache-2.0 stays that way forever.** It cannot
+be un-published. Anyone holding that commit can fork it, close it, rebrand it and
+sell it, owing nothing but a copyright notice. That's fine today — it's a
+scaffold. It stops being fine once the codebase is worth something, so the
+license question gets answered **before M5**, not after.
+
+**Future versions can be licensed differently, but only while I own all of it.**
+The moment someone else's code lands without a CLA, they hold copyright on their
+part and relicensing needs their permission. So: no outside code merges without a
+signed CLA. Issues, bug reports and discussion are welcome and cost nothing.
+
+Realistic models when it's time: open core (core stays open, paid features in a
+separate private repo), or source-available (BSL/FSL-style — readable, but
+commercial use restricted, and it stops being open source). Not decided.
 
 ## Open — do not write these up as decided
 
@@ -77,6 +98,20 @@ can live inside any premise as features.
 
 **How it gets decided:** `ANNOYANCES.md`. One line every time existing tooling
 forces something stupid. No filtering. At M5 the repeats identify themselves.
+
+**Second signal, because this gets sold.** The log measures what annoys *me*.
+What other developers would *pay* to fix is a different list, and M5 needs both.
+Before M5, get real answers from actual developers — the FTC team is the obvious
+first source, and their season starts in September, right as M5 lands.
+
+Worth being honest about the tension this creates: **C is the hardest of the four
+to sell.** Developers with money have fast laptops. It is a real differentiator
+and the one most likely to stay unpaid. B is the opposite — teams routinely pay
+for collaboration. That is not a reason to drop C. It is a reason not to let the
+log be the only input.
+
+Hardware for dogfooding C: two old Xubuntu laptops. At least two full dogfood
+days happen on those, per the rules in `ANNOYANCES.md`.
 
 ---
 
