@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Icon, iconForPath } from './Icons'
 import type { DirEntry } from '../../shared/files'
 
@@ -20,6 +20,19 @@ const HIDDEN = new Set(['.git', 'node_modules', 'out', 'dist', '.vite', '.venv',
  */
 const ARTIFACT = /\.(exe|out|o|obj|class|pyc|pdb|ilk|dll|so|dylib|d)$/i
 
+/** 8px, not 12. At 12 a five-deep java package eats 60px of a 200px sidebar. */
+const INDENT = 8
+
+const MIN_WIDTH = 140
+const MAX_WIDTH = 560
+const WIDTH_KEY = 'claven.sidebar.width'
+
+async function list(path: string): Promise<DirEntry[]> {
+  const result = await window.claven.invoke('fs:list', { path })
+  if (!result.ok) throw new Error(result.error.message)
+  return result.value.entries.filter((entry) => !HIDDEN.has(entry.name))
+}
+
 type NodeProps = {
   entry: DirEntry
   depth: number
@@ -31,6 +44,13 @@ function TreeNode({ entry, depth, activePath, onOpenFile }: NodeProps): React.JS
   const [expanded, setExpanded] = useState(false)
   const [children, setChildren] = useState<DirEntry[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  /**
+   * Compact folder chain, the way VS Code does it. A directory whose only child
+   * is a directory collapses into one row: `org/firstinspires/ftc/teamcode`
+   * instead of four rows and 32px of indent that carry no information. FTC and
+   * every other Java project is built entirely out of these.
+   */
+  const [chain, setChain] = useState<string[]>([entry.name])
 
   const toggle = useCallback(async () => {
     if (entry.kind === 'file') {
@@ -39,22 +59,34 @@ function TreeNode({ entry, depth, activePath, onOpenFile }: NodeProps): React.JS
     }
     const next = !expanded
     setExpanded(next)
-    if (next && children === null) {
-      const result = await window.claven.invoke('fs:list', { path: entry.path })
-      if (result.ok) setChildren(result.value.entries)
-      else setError(result.error.message)
+    if (!next || children !== null) return
+
+    try {
+      const names = [entry.name]
+      let current = await list(entry.path)
+      // Walk down while the directory has exactly one child and it is a folder.
+      while (current.length === 1 && current[0]?.kind === 'directory') {
+        const only = current[0]
+        names.push(only.name)
+        current = await list(only.path)
+      }
+      setChain(names)
+      setChildren(current)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
     }
   }, [entry, expanded, children, onOpenFile])
 
   const isActive = activePath === entry.path
   const isArtifact = entry.kind === 'file' && ARTIFACT.test(entry.name)
+  const label = chain.join('/')
 
   return (
     <>
       <button
         onClick={() => void toggle()}
         title={entry.path}
-        style={{ paddingInlineStart: `${depth * 12 + 10}px` }}
+        style={{ paddingInlineStart: `${depth * INDENT + 8}px` }}
         className={`relative flex w-full items-center gap-1.5 py-[3px] pe-2 text-start text-[13px] transition-colors ${
           isActive
             ? 'bg-surface-2 text-ink'
@@ -68,26 +100,23 @@ function TreeNode({ entry, depth, activePath, onOpenFile }: NodeProps): React.JS
         {isActive && <span className="bg-ember absolute inset-y-0 start-0 w-0.5" />}
         <Icon
           name={
-            entry.kind === 'directory'
-              ? expanded
-                ? 'folderOpen'
-                : 'folder'
-              : iconForPath(entry.name)
+            entry.kind === 'directory' ? (expanded ? 'folderOpen' : 'folder') : iconForPath(entry.name)
           }
           size={14}
           className="shrink-0 opacity-80"
         />
-        {/* dir="auto" so Arabic and Hebrew filenames render in their own
-            direction rather than being forced left-to-right. */}
+        {/* dir="auto" goes on the text node, never on this row — on a flex
+            container it would reverse the icon and the name for an Arabic
+            filename and send the icon to the other side. */}
         <span dir="auto" className="truncate">
-          {entry.name}
+          {label}
         </span>
         {entry.isSymlink && <span className="shrink-0 text-[10px] opacity-40">↗</span>}
       </button>
 
       {expanded && error !== null && (
         <div
-          style={{ paddingInlineStart: `${depth * 12 + 25}px` }}
+          style={{ paddingInlineStart: `${depth * INDENT + 23}px` }}
           className="text-error py-0.5 pe-2 text-xs"
         >
           {error}
@@ -95,17 +124,15 @@ function TreeNode({ entry, depth, activePath, onOpenFile }: NodeProps): React.JS
       )}
 
       {expanded &&
-        children
-          ?.filter((child) => !HIDDEN.has(child.name))
-          .map((child) => (
-            <TreeNode
-              key={child.path}
-              entry={child}
-              depth={depth + 1}
-              activePath={activePath}
-              onOpenFile={onOpenFile}
-            />
-          ))}
+        children?.map((child) => (
+          <TreeNode
+            key={child.path}
+            entry={child}
+            depth={depth + 1}
+            activePath={activePath}
+            onOpenFile={onOpenFile}
+          />
+        ))}
     </>
   )
 }
@@ -119,26 +146,45 @@ type Props = {
 
 export function FileTree({ root, activePath, onOpenFile, onOpenFolder }: Props): React.JSX.Element {
   const [entries, setEntries] = useState<DirEntry[]>([])
+  const [width, setWidth] = useState(() => {
+    const stored = Number(localStorage.getItem(WIDTH_KEY))
+    return Number.isFinite(stored) && stored >= MIN_WIDTH ? stored : 200
+  })
+  const dragging = useRef(false)
 
   useEffect(() => {
     if (root === null) {
       setEntries([])
       return
     }
-    void window.claven.invoke('fs:list', { path: root }).then((result) => {
-      if (result.ok) setEntries(result.value.entries)
-    })
+    void list(root).then(setEntries).catch(() => setEntries([]))
   }, [root])
 
-  const visible = entries.filter((entry) => !HIDDEN.has(entry.name))
+  useEffect(() => {
+    const onMove = (event: MouseEvent): void => {
+      if (!dragging.current) return
+      setWidth(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, event.clientX)))
+    }
+    const onUp = (): void => {
+      if (!dragging.current) return
+      dragging.current = false
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [])
 
-  // Width comes from --sidebar-w (200px, per BRAND.md chrome metrics). No w-*
-  // class here — two sources of truth for one width is how chrome metrics
-  // quietly drift apart.
+  useEffect(() => localStorage.setItem(WIDTH_KEY, String(width)), [width])
+
   return (
     <nav
-      className="border-line bg-surface-1 flex h-full shrink-0 flex-col border-e"
-      style={{ width: 'var(--sidebar-w)' }}
+      className="border-line bg-surface-1 relative flex h-full shrink-0 flex-col border-e"
+      style={{ width: `${width}px` }}
     >
       <div
         className="border-line flex shrink-0 items-center justify-between gap-2 border-b px-3"
@@ -162,10 +208,10 @@ export function FileTree({ root, activePath, onOpenFile, onOpenFolder }: Props):
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto py-1">
-        {root !== null && visible.length === 0 && (
+        {root !== null && entries.length === 0 && (
           <p className="text-ink-dim px-3 py-2 text-xs">empty folder</p>
         )}
-        {visible.map((entry) => (
+        {entries.map((entry) => (
           <TreeNode
             key={entry.path}
             entry={entry}
@@ -175,6 +221,21 @@ export function FileTree({ root, activePath, onOpenFile, onOpenFolder }: Props):
           />
         ))}
       </div>
+
+      {/* Resize handle. 4px of grab area straddling the border so it is
+          catchable without a visible gutter eating layout. */}
+      <div
+        onMouseDown={() => {
+          dragging.current = true
+          document.body.style.cursor = 'col-resize'
+          // Without this, dragging selects text across the whole window.
+          document.body.style.userSelect = 'none'
+        }}
+        onDoubleClick={() => setWidth(200)}
+        title="drag to resize · double-click to reset"
+        className="hover:bg-ember/40 absolute inset-y-0 -end-0.5 w-1 cursor-col-resize transition-colors"
+        style={{ transitionDuration: 'var(--dur-micro)' }}
+      />
     </nav>
   )
 }
