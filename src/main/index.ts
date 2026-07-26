@@ -14,6 +14,22 @@ function createWindow(): BrowserWindow {
     // Obsidian, per brand/BRAND.md — this is what you see before first paint.
     backgroundColor: '#0F1115',
     autoHideMenuBar: true,
+
+    // Custom chrome. `titleBarOverlay` rather than `frame: false` with
+    // hand-drawn buttons: Windows keeps drawing the real minimise/maximise/close
+    // controls, so Snap Layouts still appear when you hover maximise, hit
+    // testing is correct, and high-contrast and RTL system settings are honoured.
+    // Hand-rolled controls break all four and are a permanent maintenance tax.
+    titleBarStyle: 'hidden',
+    ...(process.platform === 'darwin'
+      ? { trafficLightPosition: { x: 12, y: 11 } }
+      : {
+          titleBarOverlay: {
+            color: '#16191F', // surface-1
+            symbolColor: '#E8E6E1', // ink
+            height: 38 // must match --titlebar-h
+          }
+        }),
     // Dev only, deliberately. A packaged build takes its icon from the
     // executable on Windows and from the desktop entry on Linux, both of which
     // electron-builder writes; setting it here would be ignored there anyway.

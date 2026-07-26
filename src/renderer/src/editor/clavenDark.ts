@@ -17,6 +17,22 @@ const LINE = '#2A2F39'
 const TEXT = '#E8E6E1'
 const EMBER = '#FF5A2B'
 
+/**
+ * DEVIATION FROM BRAND.md, deliberate and worth recording.
+ *
+ * The guide specifies selection `#1E222A` (Surface 2). Measured against
+ * obsidian `#0F1115` that is a 1.19:1 contrast ratio — perceptually invisible.
+ * VS Code's selection sits near 2:1 and that is roughly the floor for a
+ * selection you can actually see.
+ *
+ * `#3D4455` is a neutral lift in the same blue-grey family and measures 1.99:1.
+ * Not ember: keywords are ember, and an ember-tinted selection would erase the
+ * very tokens most likely to be selected.
+ *
+ * brand/BRAND.md should be updated to match rather than this drifting quietly.
+ */
+const SELECTION = '#3D4455'
+
 const SYNTAX = {
   comment: '#6B7280',
   keyword: EMBER,
@@ -26,7 +42,7 @@ const SYNTAX = {
   type: '#C8A2FF',
   variable: TEXT,
   lineNumber: '#3A4049',
-  selection: SURFACE_2
+  selection: SELECTION
 }
 
 const theme = EditorView.theme(
@@ -48,9 +64,13 @@ const theme = EditorView.theme(
     // Cursor is ember and 2px — it is one of the few places the accent is spent.
     '.cm-cursor, .cm-dropCursor': { borderLeft: `2px solid ${EMBER}` },
 
-    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
-      backgroundColor: SYNTAX.selection
-    },
+    // drawSelection() hides the native selection and paints these divs instead,
+    // so all three selectors have to carry the colour or it renders as nothing.
+    '.cm-selectionLayer .cm-selectionBackground, &.cm-focused .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection':
+      { backgroundColor: SYNTAX.selection },
+    // Unfocused selection stays visible but recedes, so you can see what is
+    // selected while the cursor is in the tree or the status bar.
+    '&:not(.cm-focused) .cm-selectionLayer .cm-selectionBackground': { backgroundColor: '#2A3040' },
     '.cm-selectionMatch': { backgroundColor: LINE },
 
     '.cm-gutters': {

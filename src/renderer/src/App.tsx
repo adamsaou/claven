@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { TitleBar } from './TitleBar'
 import { FileTree } from './FileTree'
 import { CodeMirrorEditor, languageForPath, type CursorPosition } from './editor/CodeMirrorEditor'
 import type { FileMeta } from '../../shared/files'
@@ -137,15 +138,18 @@ export default function App(): React.JSX.Element {
   }, [])
 
   return (
-    <div className="flex h-full">
-      <FileTree
-        root={root}
-        activePath={activePath}
-        onOpenFile={(path) => void openFile(path)}
-        onOpenFolder={() => void openFolder()}
-      />
+    <div className="flex h-full flex-col">
+      <TitleBar title={active?.name ?? null} dirty={dirty} />
 
-      <main className="bg-obsidian flex min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 flex-1">
+        <FileTree
+          root={root}
+          activePath={activePath}
+          onOpenFile={(path) => void openFile(path)}
+          onOpenFolder={() => void openFolder()}
+        />
+
+        <main className="bg-obsidian flex min-w-0 flex-1 flex-col">
         <div
           className="border-line bg-surface-1 flex shrink-0 items-stretch overflow-x-auto border-b"
           style={{ height: 'var(--titlebar-h)' }}
@@ -232,9 +236,10 @@ export default function App(): React.JSX.Element {
             {notice && (
               <span className={notice.kind === 'error' ? 'text-error' : ''}>{notice.text}</span>
             )}
-          </span>
-        </footer>
-      </main>
+            </span>
+          </footer>
+        </main>
+      </div>
     </div>
   )
 }
