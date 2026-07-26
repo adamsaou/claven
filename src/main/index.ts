@@ -1,6 +1,6 @@
 import { app, shell, BrowserWindow } from 'electron'
 import { join } from 'node:path'
-import { handle, assertEveryChannelHandled } from './ipc'
+import { registerHandlers } from './handlers'
 
 const isDev = !app.isPackaged
 
@@ -53,25 +53,22 @@ function createWindow(): BrowserWindow {
   return window
 }
 
-function registerHandlers(): void {
-  handle('app:ping', (request) => ({
-    sentAt: request.sentAt,
-    receivedAt: Date.now(),
-    pid: process.pid,
-    versions: {
-      electron: process.versions.electron,
-      chrome: process.versions.chrome,
-      node: process.versions.node,
-      v8: process.versions.v8
-    }
-  }))
+const isSmokeRun = process.argv.includes('--smoke')
 
-  // Startup fails here rather than leaving a renderer call hanging forever.
-  assertEveryChannelHandled()
+if (isSmokeRun) {
+  // Give the test run its own profile. Sharing userData with a running dev
+  // instance makes both fight over the same disk cache, which buries the test
+  // output in Chromium cache errors.
+  app.setPath('userData', join(app.getPath('temp'), 'claven-smoke'))
 }
 
 // A second instance would fight over the same workspace state later on.
-if (!app.requestSingleInstanceLock()) {
+//
+// The smoke run is deliberately exempt. It is a test process, not a second
+// editor, and applying the lock meant that leaving `npm run dev` open made
+// `npm run smoke` exit 0 without running a single assertion -- a test harness
+// that silently passes is worse than one that fails.
+if (!isSmokeRun && !app.requestSingleInstanceLock()) {
   app.quit()
 } else {
   void app.whenReady().then(async () => {
@@ -79,10 +76,17 @@ if (!app.requestSingleInstanceLock()) {
     registerHandlers()
     const window = createWindow()
 
-    if (process.argv.includes('--smoke')) {
+    if (isSmokeRun) {
       const { runSmokeTest } = await import('./smoke')
-      await new Promise<void>((resolve) => window.webContents.once('did-finish-load', () => resolve()))
-      const failures = await runSmokeTest(window)
+      if (window.webContents.isLoading()) {
+        await new Promise<void>((resolve) =>
+          window.webContents.once('did-finish-load', () => resolve())
+        )
+      }
+      const failures = await runSmokeTest(window).catch((error: unknown) => {
+        console.error('smoke run threw:', error)
+        return 1
+      })
       app.exit(failures === 0 ? 0 : 1)
       return
     }

@@ -7,6 +7,8 @@
  * or startup fails loudly. Both failures happen immediately instead of the
  * first time a user clicks the thing.
  */
+import type { DirEntry, FileMeta, ReadResult } from './files'
+
 export type IpcContract = {
   /**
    * The proving channel. Exists to demonstrate the contract works end to end
@@ -20,6 +22,38 @@ export type IpcContract = {
       pid: number
       versions: { electron: string; chrome: string; node: string; v8: string }
     }
+  }
+
+  /** Prompt for a folder. The only way a workspace root is ever set. */
+  'workspace:open': {
+    request: Record<string, never>
+    response: { root: string | null }
+  }
+
+  'workspace:current': {
+    request: Record<string, never>
+    response: { root: string | null }
+  }
+
+  /** List one directory. The tree loads lazily; nothing walks the whole repo. */
+  'fs:list': {
+    request: { path: string }
+    response: { entries: DirEntry[] }
+  }
+
+  'fs:read': {
+    request: { path: string }
+    response: ReadResult
+  }
+
+  /**
+   * Write with the original encoding, line endings and trailing-newline state
+   * restored from `meta`. `expectedMtimeMs` guards against clobbering a change
+   * made outside the editor; pass null to overwrite deliberately.
+   */
+  'fs:write': {
+    request: { path: string; content: string; meta: FileMeta; expectedMtimeMs: number | null }
+    response: { meta: FileMeta }
   }
 }
 
@@ -43,7 +77,14 @@ export type IpcResult<T> =
  * compromised renderer cannot reach arbitrary ipcMain handlers by guessing
  * names.
  */
-export const IPC_CHANNELS = ['app:ping'] as const
+export const IPC_CHANNELS = [
+  'app:ping',
+  'workspace:open',
+  'workspace:current',
+  'fs:list',
+  'fs:read',
+  'fs:write'
+] as const
 
 /**
  * Compile-time exhaustiveness guard.
