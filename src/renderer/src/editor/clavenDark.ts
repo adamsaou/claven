@@ -64,13 +64,20 @@ const theme = EditorView.theme(
     // Cursor is ember and 2px — it is one of the few places the accent is spent.
     '.cm-cursor, .cm-dropCursor': { borderLeft: `2px solid ${EMBER}` },
 
-    // drawSelection() hides the native selection and paints these divs instead,
-    // so all three selectors have to carry the colour or it renders as nothing.
-    '.cm-selectionLayer .cm-selectionBackground, &.cm-focused .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection':
+    // The child combinators are load-bearing, not decoration.
+    //
+    // CodeMirror's base theme ships
+    //   &dark.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground
+    // which is FIVE class selectors. A descendant-combinator version of the
+    // same rule is four, loses on specificity, and the base theme's #233 wins —
+    // which on obsidian is invisible. Match its shape exactly or lose silently.
+    '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection':
       { backgroundColor: SYNTAX.selection },
-    // Unfocused selection stays visible but recedes, so you can see what is
-    // selected while the cursor is in the tree or the status bar.
-    '&:not(.cm-focused) .cm-selectionLayer .cm-selectionBackground': { backgroundColor: '#2A3040' },
+    // Unfocused selection recedes but stays visible, so you can still see what
+    // is selected while the cursor is in the tree or the status bar.
+    '&:not(.cm-focused) > .cm-scroller > .cm-selectionLayer .cm-selectionBackground': {
+      backgroundColor: '#2A3040'
+    },
     '.cm-selectionMatch': { backgroundColor: LINE },
 
     '.cm-gutters': {
@@ -79,8 +86,13 @@ const theme = EditorView.theme(
       // 1px borders, no shadows in product chrome.
       borderRight: `1px solid ${LINE}`
     },
+    // The gutter is opaque — nothing is ever selected there.
     '.cm-activeLineGutter': { backgroundColor: SURFACE_1, color: TEXT },
-    '.cm-activeLine': { backgroundColor: SURFACE_1 },
+    // The line itself must NOT be. .cm-selectionLayer sits at z-index -1,
+    // behind the content, so an opaque active-line background paints straight
+    // over the selection — and the active line is by definition the line you
+    // are selecting in. A translucent lift reads the same and lets it through.
+    '.cm-activeLine': { backgroundColor: 'rgba(232, 230, 225, 0.035)' },
     '.cm-foldPlaceholder': {
       backgroundColor: SURFACE_2,
       border: `1px solid ${LINE}`,
