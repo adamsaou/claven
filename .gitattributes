@@ -1,0 +1,43 @@
+# Normalize everything to LF in the repository.
+# I develop on Windows and this is a cross-platform project, so without this
+# a single editor writing CRLF turns one save into a whole-file diff.
+* text=auto eol=lf
+
+# Windows-only scripts must keep CRLF or they break.
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
+
+# Shell scripts must keep LF or they break.
+*.sh   text eol=lf
+
+# Binary — never normalize, never diff as text.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.ttf  binary
+*.otf  binary
+*.pdf  binary
+*.wasm binary
+*.node binary
+
+# Test fixtures are the exception that matters most here.
+# Claven has to correctly detect and preserve CRLF, lone CR, missing trailing
+# newline, BOMs and mixed endings. If git normalizes these files, the fixtures
+# silently become useless and the tests pass for the wrong reason.
+tests/fixtures/**       -text
+tests/fixtures/**       binary
+test/fixtures/**        -text
+test/fixtures/**        binary
+**/__fixtures__/**      -text
+**/__fixtures__/**      binary
+
+# Generated files: collapse in PR diffs, still tracked.
+package-lock.json  linguist-generated=true -diff
+pnpm-lock.yaml     linguist-generated=true -diff
+yarn.lock          linguist-generated=true -diff

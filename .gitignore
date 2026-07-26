@@ -141,3 +141,23 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Claude Code — local overrides only.
+# CLAUDE.md, .claude/settings.json and .mcp.json are meant to be committed.
+# Anything *.local.json is personal and stays out.
+.claude/settings.local.json
+.claude/*.local.json
+.claude.json
+
+# Secrets. The repo is public — assume anything committed here is permanent.
+# Real coturn/TURN configs never enter the tree: static-auth-secret in a public
+# repo lets anyone relay traffic through my servers.
+*.pem
+*.key
+*.p12
+*.pfx
+turnserver.conf
+coturn.conf
+secrets.json
+credentials.json
+.credentials.json

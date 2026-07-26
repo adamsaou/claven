@@ -1,0 +1,69 @@
+#!/bin/sh
+# Claven pre-commit secret guard.
+#
+# The repo is public. A secret that lands here is permanent: deleting the file
+# later does not remove it from history, and public repos are scraped
+# continuously. If one does get through, rotate it — do not just rewrite history.
+#
+# Enable (once per clone):   git config core.hooksPath .githooks
+# Bypass (think first):      git commit --no-verify
+
+fail=0
+
+note() {
+	if [ "$fail" -eq 0 ]; then
+		printf '\n\033[31mpre-commit: refusing to commit — possible secret\033[0m\n\n'
+	fi
+	fail=1
+	printf '  %s\n' "$1"
+}
+
+# 1. Files that should never be staged at all.
+for f in $(git diff --cached --name-only --diff-filter=ACMR); do
+	case "$f" in
+		.env|.env.local|.env.*.local)
+			note "$f  — real env file (commit .env.example instead)" ;;
+		*.pem|*.key|*.p12|*.pfx)
+			note "$f  — key material" ;;
+		turnserver.conf|coturn.conf|*/turnserver.conf|*/coturn.conf)
+			note "$f  — coturn config (contains static-auth-secret)" ;;
+		.claude/settings.local.json|*.local.json)
+			note "$f  — local-only config" ;;
+		.credentials.json|credentials.json|*/credentials.json)
+			note "$f  — credentials" ;;
+	esac
+done
+
+# 2. Content patterns. Only added lines are scanned, so pre-existing prose in
+#    .gitignore and docs does not trip this.
+added=$(git diff --cached --diff-filter=ACMR -U0 | grep '^+' | grep -v '^+++')
+
+scan() {
+	if printf '%s' "$added" | grep -Eqi "$1"; then
+		note "$2"
+	fi
+}
+
+scan '\-\-\-\-\-BEGIN [A-Z ]*PRIVATE KEY\-\-\-\-\-' 'private key block'
+scan 'static-auth-secret[[:space:]]*=[[:space:]]*[^[:space:]]' 'coturn static-auth-secret with a value'
+scan 'gh[pousr]_[A-Za-z0-9]{36,}'                              'GitHub token'
+scan 'sk-ant-[A-Za-z0-9_-]{20,}'                               'Anthropic API key'
+scan 'AKIA[0-9A-Z]{16}'                                        'AWS access key id'
+scan 'xox[baprs]-[A-Za-z0-9-]{10,}'                            'Slack token'
+scan 'eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.'             'JWT'
+
+# Generic assigned secret, ignoring obvious placeholders.
+generic=$(printf '%s' "$added" \
+	| grep -Ei '(password|passwd|secret|token|api[_-]?key|auth[_-]?secret)[[:space:]]*[:=][[:space:]]*.{8,}' \
+	| grep -Eiv '(xxx|your[-_]|example|changeme|placeholder|dummy|fake|sample|redacted|\$\{|<[a-z]|process\.env|import\.meta\.env)')
+if [ -n "$generic" ]; then
+	note 'assigned secret-looking value:'
+	printf '%s' "$generic" | head -n 3 | sed 's/^/      /'
+fi
+
+if [ "$fail" -ne 0 ]; then
+	printf '\n  Rotate first if it is real. To override: git commit --no-verify\n\n'
+	exit 1
+fi
+
+exit 0
