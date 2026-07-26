@@ -135,12 +135,13 @@ export function FileTree({ root, activePath, onOpenFile, onOpenFolder }: Props):
         className="border-line flex shrink-0 items-center justify-between gap-2 border-b px-3"
         style={{ height: 'var(--titlebar-h)' }}
       >
+        {/* "explorer", not the folder name — the title bar already names the
+            workspace. Micro label per the brand type scale: 10/500/+0.14em caps. */}
         <span
           className="text-ink-dim truncate text-[10px] font-medium uppercase"
           style={{ letterSpacing: '0.14em' }}
-          title={root ?? undefined}
         >
-          {root === null ? 'no folder' : (root.split(/[\\/]/).pop() ?? root)}
+          explorer
         </span>
         <button
           onClick={onOpenFolder}

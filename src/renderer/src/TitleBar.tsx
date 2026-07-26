@@ -12,49 +12,55 @@
  */
 
 type Props = {
-  /** Filename of the focused file, or null when nothing is open. */
-  title: string | null
-  dirty: boolean
+  /** Absolute path of the open workspace, or null. */
+  root: string | null
 }
 
-export function TitleBar({ title, dirty }: Props): React.JSX.Element {
+/**
+ * Shows the WORKSPACE, not the filename.
+ *
+ * The tab strip and the status bar already say which file is focused; a third
+ * copy in the title bar is wasted chrome. VS Code makes the same call — its
+ * command centre names the folder, not the file.
+ */
+export function TitleBar({ root }: Props): React.JSX.Element {
+  const name = root === null ? null : (root.split(/[\\/]/).filter(Boolean).pop() ?? root)
+
   return (
     <div
       className="bg-surface-1 border-line relative z-10 shrink-0 border-b"
       style={{ height: 'var(--titlebar-h)' }}
     >
       <div
-        className="absolute flex items-center gap-2 px-3"
-        style={{
-          // Confine content to the region Windows has left us.
-          insetInlineStart: 'env(titlebar-area-x, 0px)',
-          top: 'env(titlebar-area-y, 0px)',
-          width: 'env(titlebar-area-width, 100%)',
-          height: 'env(titlebar-area-height, var(--titlebar-h))',
-          // Drag the window from anywhere in the bar.
-          WebkitAppRegion: 'drag'
-        } as React.CSSProperties}
+        className="absolute flex items-center px-3"
+        style={
+          {
+            // Confine content to the region Windows has left us.
+            insetInlineStart: 'env(titlebar-area-x, 0px)',
+            top: 'env(titlebar-area-y, 0px)',
+            width: 'env(titlebar-area-width, 100%)',
+            height: 'env(titlebar-area-height, var(--titlebar-h))',
+            // Drag the window from anywhere in the bar.
+            WebkitAppRegion: 'drag'
+          } as React.CSSProperties
+        }
       >
-        {/* The mark, mono. BRAND.md: below 20px always use the mono version --
+        {/* The mark, mono. BRAND.md: below 20px always use the mono version —
             the two-tone puts an ember wedge against a paper wedge across a
             diagonal, and at this size that boundary reads as mud. */}
-        <svg
-          viewBox="0 0 96 96"
-          className="text-ink shrink-0"
-          width="15"
-          height="15"
-          aria-hidden="true"
-        >
+        <svg viewBox="0 0 96 96" className="text-ink shrink-0" width="15" height="15" aria-hidden="true">
           <path d="M8 8 H62 L34 88 H8 Z" fill="currentColor" />
           <path d="M72 8 H88 V88 H44 Z" fill="currentColor" />
         </svg>
 
+        {/* Centred in the bar rather than after the mark, so it stays put as
+            the workspace name changes length. */}
         <span
           dir="auto"
-          className="text-ink-muted truncate text-[12px]"
-          title={title ?? undefined}
+          title={root ?? undefined}
+          className="text-ink-dim pointer-events-none absolute inset-x-0 mx-auto max-w-[50%] truncate text-center text-[12px]"
         >
-          {title === null ? 'claven' : `${dirty ? '● ' : ''}${title}`}
+          {name ?? 'claven'}
         </span>
       </div>
     </div>

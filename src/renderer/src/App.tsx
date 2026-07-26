@@ -139,7 +139,7 @@ export default function App(): React.JSX.Element {
 
   return (
     <div className="flex h-full flex-col">
-      <TitleBar title={active?.name ?? null} dirty={dirty} />
+      <TitleBar root={root} />
 
       <div className="flex min-h-0 flex-1">
         <FileTree
