@@ -1,12 +1,26 @@
-import { ipcMain } from 'electron'
+import { BrowserWindow, ipcMain } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
 import {
   IPC_CHANNELS,
   type IpcChannel,
+  type IpcEvent,
+  type IpcEventPayload,
   type IpcRequest,
   type IpcResponse,
   type IpcResult
 } from '../shared/ipc'
+
+/**
+ * Push an event to every open window.
+ *
+ * Typed against IpcEventContract, so an event name and a payload that disagree
+ * is a compile error rather than a listener that silently never fires.
+ */
+export function emit<E extends IpcEvent>(event: E, payload: IpcEventPayload<E>): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) window.webContents.send(event, payload)
+  }
+}
 
 type Handler<C extends IpcChannel> = (
   request: IpcRequest<C>,

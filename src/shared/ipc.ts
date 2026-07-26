@@ -87,6 +87,38 @@ export const IPC_CHANNELS = [
 ] as const
 
 /**
+ * Main -> renderer push, kept in its own table because these are unsolicited
+ * and one-way.
+ *
+ * Added before anything needs it. Almost everything still to come is push, not
+ * request/response -- LSP publishDiagnostics, PTY output, compile and run
+ * stderr, file-watch events, and eventually CRDT peer updates. Establishing the
+ * shape now costs an hour; retrofitting it across three live subsystems does not.
+ */
+export type IpcEventContract = {
+  /** The workspace root changed. null means it was closed. */
+  'workspace:changed': { root: string | null }
+  /** A file open in the editor changed on disk underneath us. */
+  'file:changed-on-disk': { path: string; mtimeMs: number }
+}
+
+export type IpcEvent = keyof IpcEventContract & string
+export type IpcEventPayload<E extends IpcEvent> = IpcEventContract[E]
+
+export const IPC_EVENTS = ['workspace:changed', 'file:changed-on-disk'] as const
+
+type MissingEvent = Exclude<IpcEvent, (typeof IPC_EVENTS)[number]>
+type AllEventsAllowlisted = [MissingEvent] extends [never]
+  ? true
+  : { error: 'event declared in IpcEventContract but missing from IPC_EVENTS'; missing: MissingEvent }
+const _allEventsAllowlisted: AllEventsAllowlisted = true
+void _allEventsAllowlisted
+
+export function isIpcEvent(value: unknown): value is IpcEvent {
+  return typeof value === 'string' && (IPC_EVENTS as readonly string[]).includes(value)
+}
+
+/**
  * Compile-time exhaustiveness guard.
  *
  * Declaring a channel in IpcContract but forgetting to add it to IPC_CHANNELS
@@ -117,4 +149,13 @@ export type ClavenApi = {
     channel: C,
     request: IpcRequest<C>
   ): Promise<IpcResult<IpcResponse<C>>>
+
+  /**
+   * Listen for a pushed event. Returns an unsubscribe function.
+   *
+   * The handler receives only the payload. Electron's IpcRendererEvent is
+   * deliberately not passed through -- it carries a `sender` that would hand
+   * the renderer a capability the allowlist exists to withhold.
+   */
+  subscribe<E extends IpcEvent>(event: E, handler: (payload: IpcEventPayload<E>) => void): () => void
 }

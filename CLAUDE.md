@@ -91,6 +91,15 @@ Realistic models when it's time: open core (core stays open, paid features in a
 separate private repo), or source-available (BSL/FSL-style — readable, but
 commercial use restricted, and it stops being open source). Not decided.
 
+**Payment rail:** solved in principle — a US-based co-founder can hold the
+account, since Stripe does not operate as a merchant in Morocco and Polar's rail
+is 18+. Two conditions. Copyright stays 100% mine unless a written agreement says
+otherwise; payment processing is not ownership and the two must not blur. And no
+paid tier, licence key or payment integration until there are 500+ weekly active
+users who are not me — licence-key support at $29/seat is the most
+time-expensive revenue in software and would eat exactly the evenings I don't
+have. The rail being solved means I can stop thinking about it, not start using it.
+
 ## Open — do not write these up as decided
 
 | | |

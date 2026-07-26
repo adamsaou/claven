@@ -1,7 +1,7 @@
 import { BrowserWindow, dialog } from 'electron'
 import { readdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import { handle, assertEveryChannelHandled } from './ipc'
+import { handle, emit, assertEveryChannelHandled } from './ipc'
 import { getWorkspaceRoot, resolveInsideWorkspace, setWorkspaceRoot } from './workspace'
 import { readTextFile, writeTextFile } from './textfile'
 import type { DirEntry } from '../shared/files'
@@ -27,7 +27,12 @@ export function registerHandlers(): void {
 
     const picked = result.canceled ? undefined : result.filePaths[0]
     if (picked === undefined) return { root: getWorkspaceRoot() }
-    return { root: await setWorkspaceRoot(picked) }
+
+    const root = await setWorkspaceRoot(picked)
+    // Pushed as well as returned: the invoke result only reaches the caller,
+    // and every panel needs to know the root changed.
+    emit('workspace:changed', { root })
+    return { root }
   })
 
   handle('workspace:current', () => ({ root: getWorkspaceRoot() }))

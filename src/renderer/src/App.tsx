@@ -1,115 +1,174 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { IpcResponse } from '../../shared/ipc'
+import { FileTree } from './FileTree'
+import { CodeMirrorEditor, languageForPath } from './editor/CodeMirrorEditor'
+import type { FileMeta } from '../../shared/files'
 
-type PingState =
-  | { status: 'idle' }
-  | { status: 'pending' }
-  | { status: 'ok'; roundTripMs: number; value: IpcResponse<'app:ping'> }
-  | { status: 'failed'; message: string; code?: string }
+type Tab = {
+  path: string
+  name: string
+  content: string
+  /** What is on disk. Dirty is content !== saved, so no manual flag to forget to clear. */
+  saved: string
+  meta: FileMeta
+}
 
-/**
- * M1 step one: prove the typed IPC contract end to end before anything is built
- * on top of it.
- *
- * Two things have to hold. A declared channel must complete a full round trip
- * with types intact, and an undeclared channel must be refused by the preload
- * without ever reaching main. The second is the half that is easy to assume and
- * expensive to be wrong about, so it is checked rather than trusted.
- */
+type Notice = { kind: 'info' | 'error'; text: string } | null
+
 export default function App(): React.JSX.Element {
-  const [ping, setPing] = useState<PingState>({ status: 'idle' })
-  const [blocked, setBlocked] = useState<string | null>(null)
+  const [root, setRoot] = useState<string | null>(null)
+  const [tabs, setTabs] = useState<Tab[]>([])
+  const [activePath, setActivePath] = useState<string | null>(null)
+  const [notice, setNotice] = useState<Notice>(null)
 
-  const runPing = useCallback(async () => {
-    setPing({ status: 'pending' })
-    const sentAt = Date.now()
-    const result = await window.claven.invoke('app:ping', { sentAt })
-    if (result.ok) {
-      setPing({ status: 'ok', roundTripMs: Date.now() - sentAt, value: result.value })
-    } else {
-      setPing({ status: 'failed', message: result.error.message, code: result.error.code })
-    }
-  }, [])
-
-  const runBlockedChannel = useCallback(async () => {
-    // Deliberately off-contract. TypeScript rejects this at compile time, which
-    // is the point -- the cast proves the *runtime* allowlist also holds, since
-    // a compromised renderer would not be going through tsc.
-    const invoke = window.claven.invoke as unknown as (
-      channel: string,
-      request: unknown
-    ) => Promise<{ ok: boolean; error?: { message: string } }>
-    const result = await invoke('fs:readFile', { path: 'C:/Windows/System32/config/SAM' })
-    setBlocked(result.ok ? 'NOT BLOCKED — the allowlist is broken' : (result.error?.message ?? 'blocked'))
-  }, [])
+  const active = tabs.find((tab) => tab.path === activePath) ?? null
 
   useEffect(() => {
-    void runPing()
-  }, [runPing])
+    void window.claven.invoke('workspace:current', {}).then((result) => {
+      if (result.ok) setRoot(result.value.root)
+    })
+    // Proves the push channel end to end: the root also arrives unsolicited.
+    return window.claven.subscribe('workspace:changed', (payload) => setRoot(payload.root))
+  }, [])
+
+  const openFolder = useCallback(async () => {
+    const result = await window.claven.invoke('workspace:open', {})
+    if (!result.ok) setNotice({ kind: 'error', text: result.error.message })
+  }, [])
+
+  const openFile = useCallback(
+    async (path: string) => {
+      if (tabs.some((tab) => tab.path === path)) {
+        setActivePath(path)
+        return
+      }
+      const result = await window.claven.invoke('fs:read', { path })
+      if (!result.ok) {
+        setNotice({ kind: 'error', text: result.error.message })
+        return
+      }
+      const value = result.value
+      if (value.kind === 'binary') {
+        setNotice({ kind: 'info', text: `${path.split(/[\\/]/).pop()} is a binary file` })
+        return
+      }
+      if (value.kind === 'too-large') {
+        setNotice({
+          kind: 'info',
+          text: `too large: ${(value.size / 1024 / 1024).toFixed(1)} MB (limit ${value.limit / 1024 / 1024} MB)`
+        })
+        return
+      }
+      setTabs((current) => [
+        ...current,
+        {
+          path,
+          name: path.split(/[\\/]/).pop() ?? path,
+          content: value.content,
+          saved: value.content,
+          meta: value.meta
+        }
+      ])
+      setActivePath(path)
+      setNotice(
+        value.meta.mixedLineEndings
+          ? { kind: 'info', text: 'mixed line endings — saving will normalise to ' + value.meta.lineEnding }
+          : null
+      )
+    },
+    [tabs]
+  )
+
+  const save = useCallback(async () => {
+    if (!active || active.content === active.saved) return
+    const result = await window.claven.invoke('fs:write', {
+      path: active.path,
+      content: active.content,
+      meta: active.meta,
+      expectedMtimeMs: active.meta.mtimeMs
+    })
+    if (!result.ok) {
+      setNotice({ kind: 'error', text: result.error.message })
+      return
+    }
+    const meta = result.value.meta
+    setTabs((current) =>
+      current.map((tab) => (tab.path === active.path ? { ...tab, saved: tab.content, meta } : tab))
+    )
+    setNotice(null)
+  }, [active])
+
+  const closeTab = useCallback(
+    (path: string) => {
+      setTabs((current) => {
+        const next = current.filter((tab) => tab.path !== path)
+        if (path === activePath) setActivePath(next.at(-1)?.path ?? null)
+        return next
+      })
+    },
+    [activePath]
+  )
 
   return (
-    <main className="flex h-full flex-col items-start gap-6 p-10">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Claven</h1>
-        <p className="text-ink-dim mt-1 text-sm">M1 · typed IPC contract</p>
-      </header>
+    <div className="flex h-full">
+      <FileTree root={root} activePath={activePath} onOpenFile={(p) => void openFile(p)} onOpenFolder={() => void openFolder()} />
 
-      <section className="border-edge bg-surface-raised w-full max-w-2xl rounded-lg border p-5">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium">app:ping</h2>
-          <button
-            onClick={() => void runPing()}
-            className="border-edge hover:bg-edge rounded border px-3 py-1 text-xs transition-colors"
-          >
-            send again
-          </button>
+      <main className="flex min-w-0 flex-1 flex-col">
+        <div className="border-edge flex h-9 shrink-0 items-stretch overflow-x-auto border-b">
+          {tabs.map((tab) => {
+            const dirty = tab.content !== tab.saved
+            return (
+              <div
+                key={tab.path}
+                className={`border-edge flex shrink-0 items-center gap-2 border-e px-3 text-[13px] ${
+                  tab.path === activePath ? 'bg-surface text-ink' : 'text-ink-dim hover:bg-white/5'
+                }`}
+              >
+                <button onClick={() => setActivePath(tab.path)} dir="auto" className="max-w-48 truncate">
+                  {tab.name}
+                </button>
+                <button
+                  onClick={() => closeTab(tab.path)}
+                  title={dirty ? 'unsaved changes' : 'close'}
+                  className="shrink-0 opacity-60 hover:opacity-100"
+                >
+                  {dirty ? '●' : '×'}
+                </button>
+              </div>
+            )
+          })}
         </div>
 
-        <div className="mt-4 text-sm">
-          {ping.status === 'idle' && <p className="text-ink-dim">not sent</p>}
-          {ping.status === 'pending' && <p className="text-ink-dim">waiting…</p>}
-          {ping.status === 'failed' && (
-            <p className="text-bad">
-              failed{ping.code ? ` [${ping.code}]` : ''}: {ping.message}
-            </p>
+        <div className="min-h-0 flex-1">
+          {active ? (
+            <CodeMirrorEditor
+              key={active.path}
+              value={active.content}
+              language={languageForPath(active.path)}
+              onChange={(content) =>
+                setTabs((current) =>
+                  current.map((tab) => (tab.path === active.path ? { ...tab, content } : tab))
+                )
+              }
+              onSave={() => void save()}
+            />
+          ) : (
+            <div className="text-ink-dim flex h-full items-center justify-center text-sm">
+              {root === null ? 'open a folder to start' : 'select a file'}
+            </div>
           )}
-          {ping.status === 'ok' && (
-            <dl className="grid grid-cols-[10rem_1fr] gap-y-1.5">
-              <dt className="text-ink-dim">round trip</dt>
-              <dd className="text-good">{ping.roundTripMs} ms</dd>
-              <dt className="text-ink-dim">main pid</dt>
-              <dd>{ping.value.pid}</dd>
-              <dt className="text-ink-dim">electron</dt>
-              <dd>{ping.value.versions.electron}</dd>
-              <dt className="text-ink-dim">chromium</dt>
-              <dd>{ping.value.versions.chrome}</dd>
-              <dt className="text-ink-dim">node (main)</dt>
-              <dd>{ping.value.versions.node}</dd>
-              <dt className="text-ink-dim">v8</dt>
-              <dd>{ping.value.versions.v8}</dd>
-            </dl>
+        </div>
+
+        <footer className="border-edge text-ink-dim flex h-7 shrink-0 items-center gap-4 border-t px-3 text-xs">
+          {active && (
+            <>
+              <span>{active.meta.lineEnding.toUpperCase()}</span>
+              <span>{active.meta.encoding}</span>
+              {active.content !== active.saved && <span className="text-good">unsaved — Ctrl+S</span>}
+            </>
           )}
-        </div>
-      </section>
-
-      <section className="border-edge bg-surface-raised w-full max-w-2xl rounded-lg border p-5">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium">off-contract channel</h2>
-          <button
-            onClick={() => void runBlockedChannel()}
-            className="border-edge hover:bg-edge rounded border px-3 py-1 text-xs transition-colors"
-          >
-            try fs:readFile
-          </button>
-        </div>
-        <p className="text-ink-dim mt-3 text-sm">
-          {blocked === null ? 'not tested' : blocked}
-        </p>
-      </section>
-
-      <footer className="text-ink-dim text-xs">
-        renderer: sandboxed, no node integration, context isolated
-      </footer>
-    </main>
+          {notice && <span className={notice.kind === 'error' ? 'text-bad' : ''}>{notice.text}</span>}
+        </footer>
+      </main>
+    </div>
   )
 }

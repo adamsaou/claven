@@ -51,8 +51,16 @@ export async function runSmokeTest(window: BrowserWindow): Promise<number> {
   add('renderer has no node access', leak === 'undefined,undefined,undefined,undefined',
     `[require, module, process, ipcRenderer] = ${leak}`)
 
+  // Pinned deliberately. If this fails, something was added to the bridge --
+  // which should be a decision, not a side effect.
   const surface = await evaluate<string>(`Object.keys(window.claven).sort().join(',')`)
-  add('bridge surface is minimal', surface === 'invoke', `window.claven = { ${surface} }`)
+  add('bridge surface is minimal', surface === 'invoke,subscribe', `window.claven = { ${surface} }`)
+
+  const badEvent = await evaluate<string>(
+    `String(typeof window.claven.subscribe('fs:everything', () => {}))`
+  )
+  add('off-contract event refused', badEvent === 'function',
+    `subscribe returned ${badEvent} (a no-op unsubscribe, having refused)`)
 
   // ---- the file layer ----------------------------------------------------
 

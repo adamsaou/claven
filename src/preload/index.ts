@@ -1,8 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import {
   isIpcChannel,
+  isIpcEvent,
   type ClavenApi,
   type IpcChannel,
+  type IpcEvent,
+  type IpcEventPayload,
   type IpcRequest,
   type IpcResponse,
   type IpcResult
@@ -28,6 +31,18 @@ const api: ClavenApi = {
       })
     }
     return ipcRenderer.invoke(channel, request)
+  },
+
+  subscribe<E extends IpcEvent>(event: E, handler: (payload: IpcEventPayload<E>) => void): () => void {
+    if (!isIpcEvent(event)) {
+      console.error(`claven: refused to subscribe to "${String(event)}" — not in the contract`)
+      return () => undefined
+    }
+    // The IpcRendererEvent first argument is dropped deliberately: it exposes a
+    // `sender` the renderer has no business holding.
+    const listener = (_event: unknown, payload: IpcEventPayload<E>): void => handler(payload)
+    ipcRenderer.on(event, listener)
+    return () => ipcRenderer.removeListener(event, listener)
   }
 }
 
