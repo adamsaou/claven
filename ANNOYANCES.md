@@ -50,3 +50,4 @@ constrained environments.** If the log says otherwise, the log wins.
 2026-07-26  `git clone` inside `~/claven` gave me `~/claven/claven`. Every time.
 2026-07-26  npm install picked vite 8, electron-vite caps at 7, plugin-react 6 requires 8. Three packages, no overlap. Had to bisect peer ranges by hand to find plugin-react 5.2 spans both.
 2026-07-26  PowerShell `Set-Content -Encoding utf8` writes a BOM. It silently broke package.json for vite's config loader. Error pointed at index.css, four files away from the actual cause.
+2026-07-26  Commissioned ~40,000 words of premise research eight hours in, with four entries in this log. It concluded C is weak and B is the bet. **The pre-registration above is contaminated** — every `[B?]` entry from here is written by someone who already read the answer. Discount the M5 decision accordingly. Logging it rather than pretending otherwise.

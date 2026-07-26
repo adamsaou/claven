@@ -41,10 +41,36 @@ configs, TURN credentials and keys stay out, permanently.
 | Shell | Electron. Cross-platform is a priority and Tauri means three engines, with the broken one (WebKitGTK) invisible from a Windows dev loop. Electron 43 drops 32-bit/armv7 on 2027-01-05; nothing here targets those. |
 | Devlog | Ship the milestone, *then* film. Never build for the thumbnail. No schedule commitments. |
 | UI layer | React + TypeScript + Vite + Tailwind. Cheap and swappable, not worth debating. |
-| Syntax | tree-sitter |
-| Language intel | LSP over JSON-RPC on stdio. v1 servers: `typescript-language-server`, `clangd`. Nothing else. |
-| AI agents | ACP (Agent Client Protocol). Premise-neutral. |
-| Terminal | xterm.js frontend |
+| **Editor core** | **CodeMirror 6**, behind a single adapter module. Reasoning below. Closed 2026-07-26. |
+| Syntax | **Lezer**, via `@codemirror/lang-javascript` (TS/TSX), `lang-cpp`, `lang-java`. Supersedes the earlier "tree-sitter" row — with CM6 those grammars ship maintained, and bolting tree-sitter on top is 15+ hours for no visible difference. |
+| Language intel | LSP over JSON-RPC on stdio, via `@codemirror/lsp-client`. **One server before September: `typescript-language-server`.** clangd needs `compile_commands.json` on Windows/MinGW or it guesses include paths — a multi-evening hole attached to a workload that compiles fine without it. |
+| AI agents | ACP (Agent Client Protocol). Premise-neutral. Season two — M6 at the earliest. |
+| Terminal | xterm.js + `node-pty`. |
+| Platforms | Windows and Linux first-class. **macOS is portable-by-construction but untested until I own a Mac** — I cannot run, sign or notarise it, so claiming it as first-class was an unfunded mandate. |
+
+### Editor core — why CodeMirror 6
+
+Choosing a custom buffer deletes `@codemirror/lsp-client` (completion, hover,
+diagnostics, go-to-definition, find-references, rename, signature help behind a
+three-method Transport), four maintained language grammars, `@codemirror/search`,
+`@codemirror/autocomplete`, and ~500 lines of already-written Unicode Bidi
+Algorithm — and replaces them with 150–300 hours of rendering, selection, undo,
+IME and bidi work before reaching parity on day one. Against an 80–120 hour
+budget that is not a design choice, it is a decision not to ship.
+
+The base rates: Edita — solo, same stack, custom text editing — hit 21 months and
+never shipped LSP. Zed took ~45 people and five years and shipped 1.0 without
+screen readers, still unable to render Arabic. And VS Code measured their own
+buffer at under 1% of frame time, so there is no performance argument either.
+
+**The rule that keeps this reversible:** every `EditorView` reference lives in one
+adapter module, enforced by `eslint no-restricted-imports`. App code defines its
+own plain-data decoration type and the adapter translates. Without that the seam
+decays within a month of M3.
+
+**"From scratch" is retired.** With CM6 this is an editor built *around*
+CodeMirror. The honest description is "built in public." The rope still gets
+written — as its own benchmarked repo, off the critical path.
 
 ### Licensing — read before touching the license or accepting a PR
 
@@ -69,11 +95,37 @@ commercial use restricted, and it stops being open source). Not decided.
 
 | | |
 |---|---|
-| **The product premise** | Four candidates (below). Decided at **M5**, by the annoyance log, not by argument. Pre-registered gut guess: **C**. |
-| **App shell** | Electron vs Tauri v2. Under active decision. |
-| **Editor core** | CodeMirror 6 vs a custom buffer + renderer. Under active decision. |
-| **PTY layer** | Follows the shell decision. `node-pty` if Electron. |
+| **The product premise** | Four candidates (below). Decided at **M5**, by the annoyance log, not by argument. Pre-registered gut guess: **C**. See the contamination note. |
+| **License model** | Open core vs source-available. Answer before M5. |
 | **Devlog start point** | M0 (the planning) or M1 (something that runs). |
+
+### Tripwire
+
+Written down now, before the evidence arrives, because tripwires only work that way:
+
+> **If I have not opened Claven to do real work by 15 August, the problem is not
+> the premise.**
+
+The failure mode for this project is not being out-competed. Cursor has never
+heard of Claven. It is abandonment in October — hours halve on 12 September, and
+if Claven still isn't worth opening by then, I stop opening it, the log stops
+growing, M5 has no input, and the next session is a chore with no reward
+attached. **The loop breaks the moment I am no longer the user.**
+
+### The pre-registration is contaminated — discount M5 accordingly
+
+On 2026-07-26, eight hours into the project and with four entries in the log, I
+commissioned ~40,000 words of research on which premise to pick. It concluded
+that C is weak, B is the bet, A should be dropped, D has a ceiling.
+
+`ANNOYANCES.md` pre-registers "gut says C" precisely so the M5 decision cannot be
+rationalised toward it. **That only works if you haven't read the answer key.**
+Every `[B?]` entry written from here is authored by someone who has read a report
+saying B is the bet. That cost is already paid and cannot be undone.
+
+What can still be done: know it, write it down, and discount the M5 decision by
+it. A compromised instrument that knows it is compromised is still usable. One
+that has quietly forgotten is not.
 
 ### The premise candidates
 
