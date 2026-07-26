@@ -7,6 +7,12 @@ import { bracketMatching, foldGutter, indentOnInput, syntaxHighlighting, default
 import { javascript } from '@codemirror/lang-javascript'
 import { cpp } from '@codemirror/lang-cpp'
 import { java } from '@codemirror/lang-java'
+import { python } from '@codemirror/lang-python'
+import { json } from '@codemirror/lang-json'
+import { markdown } from '@codemirror/lang-markdown'
+import { html } from '@codemirror/lang-html'
+import { css } from '@codemirror/lang-css'
+import { rust } from '@codemirror/lang-rust'
 import { oneDark } from '@codemirror/theme-one-dark'
 
 /**
@@ -20,15 +26,31 @@ import { oneDark } from '@codemirror/theme-one-dark'
  * feature that draws would reach across.
  */
 
-export type EditorLanguage = 'typescript' | 'tsx' | 'cpp' | 'java' | 'plain'
+export type EditorLanguage =
+  | 'typescript' | 'tsx' | 'cpp' | 'java' | 'python'
+  | 'json' | 'markdown' | 'html' | 'css' | 'rust' | 'plain'
+
+/**
+ * Extension -> grammar. Python was missing on day one because the language list
+ * came from the plan (React/TS, competitive C++, FTC Java) rather than from what
+ * is actually in ~/DEVELOPEMENT. Add to this the moment a real file opens plain.
+ */
+const BY_EXTENSION: Array<[RegExp, EditorLanguage]> = [
+  [/\.(tsx|jsx)$/, 'tsx'],
+  [/\.(ts|mts|cts|js|mjs|cjs)$/, 'typescript'],
+  [/\.(cpp|cc|cxx|hpp|hh|hxx|c|h)$/, 'cpp'],
+  [/\.java$/, 'java'],
+  [/\.(py|pyw|pyi)$/, 'python'],
+  [/\.(json|jsonc|webmanifest)$/, 'json'],
+  [/\.(md|markdown)$/, 'markdown'],
+  [/\.(html?|xhtml|vue|svelte)$/, 'html'],
+  [/\.(css|scss|less)$/, 'css'],
+  [/\.rs$/, 'rust']
+]
 
 export function languageForPath(path: string): EditorLanguage {
   const lower = path.toLowerCase()
-  if (lower.endsWith('.tsx') || lower.endsWith('.jsx')) return 'tsx'
-  if (lower.endsWith('.ts') || lower.endsWith('.js') || lower.endsWith('.mjs') || lower.endsWith('.cjs')) return 'typescript'
-  if (/\.(cpp|cc|cxx|hpp|hh|hxx|c|h)$/.test(lower)) return 'cpp'
-  if (lower.endsWith('.java')) return 'java'
-  return 'plain'
+  return BY_EXTENSION.find(([pattern]) => pattern.test(lower))?.[1] ?? 'plain'
 }
 
 function languageExtension(language: EditorLanguage): Extension[] {
@@ -41,6 +63,18 @@ function languageExtension(language: EditorLanguage): Extension[] {
       return [cpp()]
     case 'java':
       return [java()]
+    case 'python':
+      return [python()]
+    case 'json':
+      return [json()]
+    case 'markdown':
+      return [markdown()]
+    case 'html':
+      return [html()]
+    case 'css':
+      return [css()]
+    case 'rust':
+      return [rust()]
     default:
       return []
   }
