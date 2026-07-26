@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Icon, iconForPath } from './Icons'
 import type { DirEntry } from '../../shared/files'
 
 /**
@@ -65,9 +66,17 @@ function TreeNode({ entry, depth, activePath, onOpenFile }: NodeProps): React.JS
         {/* Ember marks the open file, matching the active tab's indicator so
             the two chrome surfaces agree about what is focused. */}
         {isActive && <span className="bg-ember absolute inset-y-0 start-0 w-0.5" />}
-        <span className="w-3 shrink-0 text-[10px] opacity-50">
-          {entry.kind === 'directory' ? (expanded ? '▾' : '▸') : ''}
-        </span>
+        <Icon
+          name={
+            entry.kind === 'directory'
+              ? expanded
+                ? 'folderOpen'
+                : 'folder'
+              : iconForPath(entry.name)
+          }
+          size={14}
+          className="shrink-0 opacity-80"
+        />
         {/* dir="auto" so Arabic and Hebrew filenames render in their own
             direction rather than being forced left-to-right. */}
         <span dir="auto" className="truncate">

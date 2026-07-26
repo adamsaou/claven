@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow } from 'electron'
+import { app, shell, BrowserWindow, Menu } from 'electron'
 import { join } from 'node:path'
 import { registerHandlers } from './handlers'
 
@@ -104,6 +104,7 @@ if (!isSmokeRun && !app.requestSingleInstanceLock()) {
 } else {
   void app.whenReady().then(async () => {
     electronAppUserModelId()
+    installMenu()
     registerHandlers()
     const window = createWindow()
 
@@ -139,6 +140,42 @@ if (!isSmokeRun && !app.requestSingleInstanceLock()) {
     // macOS convention is to stay alive with no windows; everywhere else quits.
     if (process.platform !== 'darwin') app.quit()
   })
+}
+
+/**
+ * No menu bar on Windows and Linux — the command palette replaces it, and the
+ * command centre in the title bar is what makes it discoverable.
+ *
+ * macOS is not a style choice. Electron always draws an application menu on
+ * darwin, and the standard editing shortcuts are wired to menu *roles* — with
+ * no Edit menu registering cut/copy/paste/selectAll, Cmd+C and Cmd+V do not
+ * reliably reach the renderer. So darwin gets the minimum the OS requires and
+ * nothing that duplicates the palette.
+ */
+function installMenu(): void {
+  if (process.platform !== 'darwin') {
+    Menu.setApplicationMenu(null)
+    return
+  }
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      { role: 'appMenu' },
+      {
+        label: 'Edit',
+        submenu: [
+          { role: 'undo' },
+          { role: 'redo' },
+          { type: 'separator' },
+          { role: 'cut' },
+          { role: 'copy' },
+          { role: 'paste' },
+          { role: 'selectAll' }
+        ]
+      },
+      { label: 'View', submenu: [{ role: 'togglefullscreen' }, { role: 'toggleDevTools' }] },
+      { role: 'windowMenu' }
+    ])
+  )
 }
 
 /** Without this Windows groups the taskbar entry under "electron.app.Electron". */

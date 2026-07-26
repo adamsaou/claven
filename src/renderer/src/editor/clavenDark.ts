@@ -93,7 +93,31 @@ const theme = EditorView.theme(
     },
     '.cm-nonmatchingBracket': { color: '#E5484D' },
 
+    // ctrl+f opens CodeMirror's search panel. Theming only .cm-panels left the
+    // input and buttons on CodeMirror's own defaults — a half-branded panel.
     '.cm-panels': { backgroundColor: SURFACE_1, color: TEXT, borderTop: `1px solid ${LINE}` },
+    '.cm-panel.cm-search': { padding: '6px 8px', fontFamily: "'IBM Plex Sans', sans-serif" },
+    '.cm-panel.cm-search label': { fontSize: '11px', color: '#9AA0AA' },
+    '.cm-textfield': {
+      backgroundColor: SURFACE_2,
+      border: `1px solid ${LINE}`,
+      borderRadius: '2px',
+      color: TEXT,
+      padding: '2px 6px',
+      fontSize: '12px'
+    },
+    '.cm-textfield:focus': { outline: `1px solid ${EMBER}`, outlineOffset: '-1px' },
+    '.cm-button': {
+      backgroundColor: SURFACE_2,
+      backgroundImage: 'none',
+      border: `1px solid ${LINE}`,
+      borderRadius: '2px',
+      color: TEXT,
+      padding: '2px 8px',
+      fontSize: '12px'
+    },
+    '.cm-button:hover': { backgroundColor: LINE },
+    '.cm-panel.cm-search [name="close"]': { color: '#9AA0AA', fontSize: '16px' },
     '.cm-searchMatch': { backgroundColor: SURFACE_2, outline: `1px solid ${LINE}` },
     '.cm-searchMatch.cm-searchMatch-selected': { backgroundColor: EMBER, color: OBSIDIAN },
 

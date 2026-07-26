@@ -11,9 +11,12 @@
  * display scale. A magic 140px would be wrong on most of those.
  */
 
+import { Icon } from './Icons'
+
 type Props = {
   /** Absolute path of the open workspace, or null. */
   root: string | null
+  onOpenPalette: () => void
 }
 
 /**
@@ -23,7 +26,7 @@ type Props = {
  * copy in the title bar is wasted chrome. VS Code makes the same call — its
  * command centre names the folder, not the file.
  */
-export function TitleBar({ root }: Props): React.JSX.Element {
+export function TitleBar({ root, onOpenPalette }: Props): React.JSX.Element {
   const name = root === null ? null : (root.split(/[\\/]/).filter(Boolean).pop() ?? root)
 
   return (
@@ -53,15 +56,29 @@ export function TitleBar({ root }: Props): React.JSX.Element {
           <path d="M72 8 H88 V88 H44 Z" fill="currentColor" />
         </svg>
 
-        {/* Centred in the bar rather than after the mark, so it stays put as
-            the workspace name changes length. */}
-        <span
-          dir="auto"
-          title={root ?? undefined}
-          className="text-ink-dim pointer-events-none absolute inset-x-0 mx-auto max-w-[50%] truncate text-center text-[12px]"
+        {/* Command centre.
+            With no menu bar on Windows and Linux, this is the only visible
+            entry point to the palette — it is what makes the command list
+            discoverable to someone who never learned ctrl+shift+p, and that is
+            precisely what earns dropping File/Edit/View. no-drag so it stays
+            clickable inside a drag region. */}
+        <button
+          onClick={onOpenPalette}
+          title="command palette — ctrl+shift+p"
+          className="border-line text-ink-dim hover:border-ink-dim hover:text-ink-muted absolute inset-x-0 mx-auto flex h-[22px] w-[min(28rem,42%)] items-center gap-2 border px-2 transition-colors"
+          style={
+            {
+              borderRadius: 'var(--radius-xs)',
+              transitionDuration: 'var(--dur-micro)',
+              WebkitAppRegion: 'no-drag'
+            } as React.CSSProperties
+          }
         >
-          {name ?? 'claven'}
-        </span>
+          <Icon name="search" size={11} className="shrink-0 opacity-70" />
+          <span dir="auto" className="truncate text-[12px]">
+            {name ?? 'claven'}
+          </span>
+        </button>
       </div>
     </div>
   )
