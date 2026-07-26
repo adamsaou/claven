@@ -11,8 +11,23 @@ function createWindow(): BrowserWindow {
     minWidth: 640,
     minHeight: 400,
     show: false,
-    backgroundColor: '#101014',
+    // Obsidian, per brand/BRAND.md — this is what you see before first paint.
+    backgroundColor: '#0F1115',
     autoHideMenuBar: true,
+    // Dev only, deliberately. A packaged build takes its icon from the
+    // executable on Windows and from the desktop entry on Linux, both of which
+    // electron-builder writes; setting it here would be ignored there anyway.
+    // In dev there is no executable to inherit from, so without this you stare
+    // at Electron's default atom in the taskbar all day.
+    ...(isDev
+      ? {
+          icon: join(
+            app.getAppPath(),
+            'build',
+            process.platform === 'win32' ? 'icon.ico' : 'icon.png'
+          )
+        }
+      : {}),
     webPreferences: {
       // The renderer gets no Node access whatsoever. Everything it needs comes
       // through the preload's single `invoke`. These are Electron's defaults on

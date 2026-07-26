@@ -17,7 +17,8 @@
     "smoke": "electron-vite build && electron . --smoke",
     "typecheck": "tsc --noEmit -p tsconfig.node.json --composite false && tsc --noEmit -p tsconfig.web.json --composite false",
     "lint": "node tests/check-boundaries.mjs",
-    "fixtures": "node tests/generate-fixtures.mjs"
+    "fixtures": "node tests/generate-fixtures.mjs",
+    "icons": "node scripts/generate-icons.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.4",
@@ -43,12 +44,14 @@
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "@tailwindcss/vite": "^4.3.3",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.2.0",
     "electron": "^43.2.0",
     "electron-vite": "^5.0.0",
+    "png-to-ico": "^3.0.2",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^7.3.6"
