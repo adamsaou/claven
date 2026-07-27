@@ -2,9 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { TitleBar } from './TitleBar'
 import { FileTree } from './FileTree'
 import { CommandPalette, type Command } from './CommandPalette'
+import { QuickOpen } from './QuickOpen'
+import { Prompt, type PromptRequest } from './Prompt'
+import { ContextMenu, type MenuItem, type MenuRequest } from './ContextMenu'
 import { ActivityBar, type Container } from './ActivityBar'
 import { Icon, iconForPath } from './Icons'
-import { LINE_ENDING_CHARS, type LineEnding } from '../../shared/files'
+import type { DirEntry, LineEnding } from '../../shared/files'
 import { CodeMirrorEditor, languageForPath, type CursorPosition } from './editor/CodeMirrorEditor'
 import type { FileMeta } from '../../shared/files'
 
@@ -41,6 +44,9 @@ export default function App(): React.JSX.Element {
   const [notice, setNotice] = useState<Notice>(null)
   const [cursor, setCursor] = useState<CursorPosition>({ line: 1, column: 1, selected: 0 })
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [quickOpen, setQuickOpen] = useState(false)
+  const [prompt, setPrompt] = useState<PromptRequest | null>(null)
+  const [menu, setMenu] = useState<MenuRequest | null>(null)
   const [sidebarVisible, setSidebarVisible] = useState(true)
   const [pendingChord, setPendingChord] = useState<string | null>(null)
   const activeTabRef = useRef<HTMLDivElement>(null)
@@ -135,7 +141,7 @@ export default function App(): React.JSX.Element {
     setNotice({ kind: 'info', text: `saved in ${Math.round(performance.now() - started)}ms` })
   }, [active])
 
-  const closeTab = useCallback((path: string) => {
+  const forceCloseTab = useCallback((path: string) => {
     setTabs((current) => {
       const index = current.findIndex((tab) => tab.path === path)
       const next = current.filter((tab) => tab.path !== path)
@@ -147,6 +153,151 @@ export default function App(): React.JSX.Element {
       return next
     })
   }, [])
+
+  /**
+   * Closing a modified tab used to discard the changes silently. That was a
+   * data-loss bug, not a missing feature.
+   */
+  const closeTab = useCallback(
+    async (path: string) => {
+      const tab = tabs.find((candidate) => candidate.path === path)
+      if (tab === undefined) return
+      if (tab.content === tab.saved) {
+        forceCloseTab(path)
+        return
+      }
+      const answer = await window.claven.invoke('dialog:confirmDiscard', { name: tab.name })
+      if (!answer.ok || answer.value.action === 'cancel') return
+      if (answer.value.action === 'save') {
+        const written = await window.claven.invoke('fs:write', {
+          path: tab.path,
+          content: tab.content,
+          meta: tab.meta,
+          expectedMtimeMs: tab.meta.mtimeMs
+        })
+        // A failed save must not close the tab — that would lose the work the
+        // dialog just promised to keep.
+        if (!written.ok) {
+          setNotice({ kind: 'error', text: written.error.message })
+          return
+        }
+      }
+      forceCloseTab(path)
+    },
+    [tabs, forceCloseTab]
+  )
+
+  // Main cannot see React state, and a renderer cannot veto its own window
+  // closing — so the count has to be pushed for the close guard to work.
+  useEffect(() => {
+    const count = tabs.filter((tab) => tab.content !== tab.saved).length
+    void window.claven.invoke('app:setDirtyCount', { count })
+  }, [tabs])
+
+  const openRelative = useCallback(
+    (relativePath: string) => {
+      if (root === null) return
+      void openFile(`${root}/${relativePath}`)
+    },
+    [root, openFile]
+  )
+
+  const fileOperations = useCallback(
+    (entry: DirEntry | null): MenuItem[] => {
+      if (root === null) return []
+      // A file's siblings live in its parent; a directory's children live in it.
+      const parent =
+        entry === null
+          ? root
+          : entry.kind === 'directory'
+            ? entry.path
+            : entry.path.slice(0, Math.max(entry.path.lastIndexOf('/'), entry.path.lastIndexOf('\\')))
+
+      const run = async (
+        channel: 'fs:createFile' | 'fs:createDirectory',
+        name: string
+      ): Promise<void> => {
+        const result = await window.claven.invoke(channel, { path: `${parent}/${name}` })
+        if (!result.ok) setNotice({ kind: 'error', text: result.error.message })
+        else if (channel === 'fs:createFile') void openFile(result.value.path)
+      }
+
+      const items: MenuItem[] = [
+        {
+          kind: 'item',
+          label: 'new file',
+          run: () =>
+            setPrompt({
+              title: 'new file',
+              initial: '',
+              confirmLabel: 'create',
+              onConfirm: (name) => void run('fs:createFile', name)
+            })
+        },
+        {
+          kind: 'item',
+          label: 'new folder',
+          run: () =>
+            setPrompt({
+              title: 'new folder',
+              initial: '',
+              confirmLabel: 'create',
+              onConfirm: (name) => void run('fs:createDirectory', name)
+            })
+        }
+      ]
+
+      if (entry !== null) {
+        const dot = entry.name.lastIndexOf('.')
+        items.push(
+          { kind: 'separator' },
+          {
+            kind: 'item',
+            label: 'rename',
+            run: () =>
+              setPrompt({
+                title: `rename ${entry.name}`,
+                initial: entry.name,
+                // Preselect the stem so typing replaces the name, not the
+                // extension — renaming rarely means changing the type.
+                selectTo: dot > 0 ? dot : entry.name.length,
+                confirmLabel: 'rename',
+                onConfirm: (name) => {
+                  const to = `${parent}/${name}`
+                  void window.claven
+                    .invoke('fs:rename', { from: entry.path, to })
+                    .then((result) => {
+                      if (!result.ok) setNotice({ kind: 'error', text: result.error.message })
+                      else forceCloseTab(entry.path)
+                    })
+                }
+              })
+          },
+          {
+            kind: 'item',
+            label: 'delete',
+            danger: true,
+            run: () =>
+              void window.claven.invoke('fs:delete', { path: entry.path }).then((result) => {
+                if (!result.ok) setNotice({ kind: 'error', text: result.error.message })
+                else {
+                  forceCloseTab(entry.path)
+                  setNotice({ kind: 'info', text: `moved ${entry.name} to trash` })
+                }
+              })
+          },
+          { kind: 'separator' },
+          {
+            kind: 'item',
+            label: 'reveal in file explorer',
+            run: () => void window.claven.invoke('fs:reveal', { path: entry.path })
+          }
+        )
+      }
+      return items
+    },
+    [root, openFile, forceCloseTab]
+  )
 
   const cycleTab = useCallback(
     (delta: number) => {
@@ -176,20 +327,29 @@ export default function App(): React.JSX.Element {
         run: () => setSidebarVisible((visible) => !visible)
       },
       {
+        id: 'file.quickOpen',
+        title: 'go to file',
+        keys: 'ctrl+p',
+        enabled: root !== null,
+        run: () => setQuickOpen(true)
+      },
+      {
         id: 'tab.close',
         title: 'close tab',
         keys: 'ctrl+w',
         enabled: active !== null,
-        run: () => active && closeTab(active.path)
+        run: () => active && void closeTab(active.path)
       },
       {
         id: 'tab.closeAll',
         title: 'close all tabs',
         enabled: tabs.length > 0,
-        run: () => {
-          setTabs([])
-          setActivePath(null)
-        }
+        // Sequential on purpose: each dirty tab gets its own prompt rather
+        // than one dialog standing in for all of them.
+        run: () => void tabs.reduce<Promise<void>>(
+          (chain, tab) => chain.then(() => closeTab(tab.path)),
+          Promise.resolve()
+        )
       },
       { id: 'tab.next', title: 'next tab', keys: 'ctrl+tab', enabled: tabs.length > 1, run: () => cycleTab(1) },
       // Ranked deliberately high: Windows dev, Linux judges. This is the switch
@@ -252,9 +412,12 @@ export default function App(): React.JSX.Element {
       } else if (event.key.toLowerCase() === 'b') {
         event.preventDefault()
         setSidebarVisible((visible) => !visible)
+      } else if (event.shiftKey === false && event.key.toLowerCase() === 'p') {
+        event.preventDefault()
+        setQuickOpen((open) => !open)
       } else if (event.key.toLowerCase() === 'w') {
         event.preventDefault()
-        if (active) closeTab(active.path)
+        if (active) void closeTab(active.path)
       } else if (event.key === 'Tab') {
         event.preventDefault()
         cycleTab(event.shiftKey ? -1 : 1)
@@ -286,6 +449,11 @@ export default function App(): React.JSX.Element {
             activePath={activePath}
             onOpenFile={(path) => void openFile(path)}
             onOpenFolder={() => void openFolder()}
+            onContextMenu={(entry, event) => {
+              event.preventDefault()
+              const items = fileOperations(entry)
+              if (items.length > 0) setMenu({ x: event.clientX, y: event.clientY, items })
+            }}
           />
         )}
 
@@ -323,7 +491,7 @@ export default function App(): React.JSX.Element {
                   </span>
                 </button>
                 <button
-                  onClick={() => closeTab(tab.path)}
+                  onClick={() => void closeTab(tab.path)}
                   aria-label={`close ${tab.name}`}
                   className="text-ink-dim hover:text-ink flex h-4 w-4 shrink-0 items-center justify-center text-xs"
                 >
@@ -397,6 +565,14 @@ export default function App(): React.JSX.Element {
         commands={commands}
         onClose={() => setPaletteOpen(false)}
       />
+      <QuickOpen
+        open={quickOpen}
+        root={root}
+        onPick={openRelative}
+        onClose={() => setQuickOpen(false)}
+      />
+      <Prompt request={prompt} onClose={() => setPrompt(null)} />
+      <ContextMenu request={menu} onClose={() => setMenu(null)} />
     </div>
   )
 }

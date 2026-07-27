@@ -55,6 +55,65 @@ export type IpcContract = {
     request: { path: string; content: string; meta: FileMeta; expectedMtimeMs: number | null }
     response: { meta: FileMeta }
   }
+
+  /** Create an empty file. Fails rather than truncating if it already exists. */
+  'fs:createFile': {
+    request: { path: string }
+    response: { path: string }
+  }
+
+  'fs:createDirectory': {
+    request: { path: string }
+    response: { path: string }
+  }
+
+  'fs:rename': {
+    request: { from: string; to: string }
+    response: { path: string }
+  }
+
+  /**
+   * Moves to the OS trash, never unlinks. A delete you cannot undo is not a
+   * feature an editor should have.
+   */
+  'fs:delete': {
+    request: { path: string }
+    response: Record<string, never>
+  }
+
+  /** Reveal in Explorer/Finder/file manager. */
+  'fs:reveal': {
+    request: { path: string }
+    response: Record<string, never>
+  }
+
+  /**
+   * Flat list of every file under the workspace, for quick-open. Walked in the
+   * main process because doing it over per-directory `fs:list` calls would be
+   * thousands of round trips.
+   */
+  'fs:walk': {
+    request: Record<string, never>
+    response: { files: string[]; truncated: boolean }
+  }
+
+  /**
+   * Ask before destroying unsaved work. Returns which button was pressed so the
+   * renderer decides what to do — main does not know what "save" means here.
+   */
+  'dialog:confirmDiscard': {
+    request: { name: string }
+    response: { action: 'save' | 'discard' | 'cancel' }
+  }
+
+  /**
+   * Tells main how many tabs are dirty so it can guard the window close.
+   * The renderer cannot veto a window close on its own.
+   */
+  'app:setDirtyCount': {
+    request: { count: number }
+    response: Record<string, never>
+  }
 }
 
 export type IpcChannel = keyof IpcContract & string
@@ -83,7 +142,15 @@ export const IPC_CHANNELS = [
   'workspace:current',
   'fs:list',
   'fs:read',
-  'fs:write'
+  'fs:write',
+  'fs:createFile',
+  'fs:createDirectory',
+  'fs:rename',
+  'fs:delete',
+  'fs:reveal',
+  'fs:walk',
+  'dialog:confirmDiscard',
+  'app:setDirtyCount'
 ] as const
 
 /**
@@ -100,12 +167,14 @@ export type IpcEventContract = {
   'workspace:changed': { root: string | null }
   /** A file open in the editor changed on disk underneath us. */
   'file:changed-on-disk': { path: string; mtimeMs: number }
+  /** The tree changed on disk and should reload the given directory. */
+  'fs:invalidate': { path: string }
 }
 
 export type IpcEvent = keyof IpcEventContract & string
 export type IpcEventPayload<E extends IpcEvent> = IpcEventContract[E]
 
-export const IPC_EVENTS = ['workspace:changed', 'file:changed-on-disk'] as const
+export const IPC_EVENTS = ['workspace:changed', 'file:changed-on-disk', 'fs:invalidate'] as const
 
 type MissingEvent = Exclude<IpcEvent, (typeof IPC_EVENTS)[number]>
 type AllEventsAllowlisted = [MissingEvent] extends [never]

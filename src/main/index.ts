@@ -1,6 +1,6 @@
-import { app, shell, BrowserWindow, Menu } from 'electron'
+import { app, shell, dialog, BrowserWindow, Menu } from 'electron'
 import { join } from 'node:path'
-import { registerHandlers } from './handlers'
+import { registerHandlers, getDirtyCount } from './handlers'
 
 const isDev = !app.isPackaged
 
@@ -63,6 +63,35 @@ function createWindow(): BrowserWindow {
 
   // Avoid the white flash before first paint.
   window.once('ready-to-show', () => window.show())
+
+  /**
+   * Guard the window close.
+   *
+   * A renderer cannot veto its own window closing, so main has to hold the
+   * dirty count (pushed over app:setDirtyCount) and intercept here. Without
+   * this, closing the window silently destroys every unsaved tab.
+   */
+  let forceClose = false
+  window.on('close', (event) => {
+    if (forceClose || isSmokeRun || getDirtyCount() === 0) return
+    event.preventDefault()
+    const count = getDirtyCount()
+    void dialog
+      .showMessageBox(window, {
+        type: 'warning',
+        buttons: ['close anyway', 'cancel'],
+        defaultId: 1,
+        cancelId: 1,
+        message: `${count} unsaved ${count === 1 ? 'file' : 'files'}`,
+        detail: 'your changes will be lost if you close now.'
+      })
+      .then(({ response }) => {
+        if (response === 0) {
+          forceClose = true
+          window.close()
+        }
+      })
+  })
 
   // Nothing in-app should ever navigate the window itself. Links open in the
   // user's browser; navigation attempts are refused.

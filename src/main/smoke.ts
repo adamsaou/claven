@@ -170,6 +170,49 @@ export async function runSmokeTest(window: BrowserWindow): Promise<number> {
     !absolute.ok && absolute.error?.code === 'OUTSIDE_WORKSPACE',
     absolute.ok ? 'ESCAPED — absolute paths are not contained' : `rejected as ${absolute.error.code}`)
 
+  // ---- file operations, which can now CREATE and DESTROY --------------
+
+  const made = await invoke<Ok<{ path: string }> | Err>('fs:createFile', {
+    path: join(fixtures, 'made-by-smoke.txt')
+  })
+  add('createFile works', made.ok, made.ok ? 'created' : `failed: ${made.error.message}`)
+
+  const clobber = await invoke<Err>('fs:createFile', { path: join(fixtures, 'lf.txt') })
+  add('createFile refuses to truncate an existing file', !clobber.ok,
+    clobber.ok ? 'TRUNCATED AN EXISTING FILE' : `refused as ${clobber.error.code}`)
+
+  const renameClash = await invoke<Err>('fs:rename', {
+    from: join(fixtures, 'made-by-smoke.txt'),
+    to: join(fixtures, 'crlf.txt')
+  })
+  add('rename refuses to overwrite', !renameClash.ok,
+    renameClash.ok ? 'OVERWROTE crlf.txt' : `refused as ${renameClash.error.code}`)
+
+  const walked = await invoke<Ok<{ files: string[]; truncated: boolean }> | Err>('fs:walk', {})
+  add('walk finds the fixtures',
+    walked.ok && walked.value.files.some((f) => f.endsWith('arabic.txt')),
+    walked.ok ? `${walked.value.files.length} files` : 'walk failed')
+
+  // These channels write and destroy, so an escape here is far worse than the
+  // read-side one — a traversal would let a compromised renderer plant a file
+  // anywhere on disk, or trash one.
+  for (const channel of ['fs:createFile', 'fs:createDirectory', 'fs:delete'] as const) {
+    const escaped = await invoke<Err>(channel, {
+      path: process.platform === 'win32' ? 'C:\\Windows\\claven-escape' : '/tmp/claven-escape'
+    })
+    add(`${channel} refuses paths outside the workspace`,
+      !escaped.ok && escaped.error?.code === 'OUTSIDE_WORKSPACE',
+      escaped.ok ? 'ESCAPED THE WORKSPACE' : `refused as ${escaped.error.code}`)
+  }
+
+  const traversal = await invoke<Err>('fs:rename', {
+    from: join(fixtures, 'lf.txt'),
+    to: '../../../../../../claven-escape.txt'
+  })
+  add('rename refuses to move a file out of the workspace',
+    !traversal.ok && traversal.error?.code === 'OUTSIDE_WORKSPACE',
+    traversal.ok ? 'MOVED A FILE OUT OF THE WORKSPACE' : `refused as ${traversal.error.code}`)
+
   await rm(scratch, { recursive: true, force: true }).catch(() => undefined)
 
   // ---- report ------------------------------------------------------------

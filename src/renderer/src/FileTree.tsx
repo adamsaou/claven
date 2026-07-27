@@ -38,12 +38,21 @@ type NodeProps = {
   depth: number
   activePath: string | null
   onOpenFile: (path: string) => void
+  onContextMenu: (entry: DirEntry, event: React.MouseEvent) => void
 }
 
-function TreeNode({ entry, depth, activePath, onOpenFile }: NodeProps): React.JSX.Element {
+function TreeNode({
+  entry,
+  depth,
+  activePath,
+  onOpenFile,
+  onContextMenu
+}: NodeProps): React.JSX.Element {
   const [expanded, setExpanded] = useState(false)
   const [children, setChildren] = useState<DirEntry[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  /** Deepest directory in the compact chain — what this node actually lists. */
+  const [chainPath, setChainPath] = useState(entry.path)
   /**
    * Compact folder chain, the way VS Code does it. A directory whose only child
    * is a directory collapses into one row: `org/firstinspires/ftc/teamcode`
@@ -52,6 +61,27 @@ function TreeNode({ entry, depth, activePath, onOpenFile }: NodeProps): React.JS
    */
   const [chain, setChain] = useState<string[]>([entry.name])
 
+  const load = useCallback(async () => {
+    try {
+      const names = [entry.name]
+      let path = entry.path
+      let current = await list(path)
+      // Walk down while the directory has exactly one child and it is a folder.
+      while (current.length === 1 && current[0]?.kind === 'directory') {
+        const only = current[0]
+        names.push(only.name)
+        path = only.path
+        current = await list(path)
+      }
+      setChain(names)
+      setChainPath(path)
+      setChildren(current)
+      setError(null)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }, [entry])
+
   const toggle = useCallback(async () => {
     if (entry.kind === 'file') {
       onOpenFile(entry.path)
@@ -59,23 +89,18 @@ function TreeNode({ entry, depth, activePath, onOpenFile }: NodeProps): React.JS
     }
     const next = !expanded
     setExpanded(next)
-    if (!next || children !== null) return
+    if (next && children === null) await load()
+  }, [entry, expanded, children, onOpenFile, load])
 
-    try {
-      const names = [entry.name]
-      let current = await list(entry.path)
-      // Walk down while the directory has exactly one child and it is a folder.
-      while (current.length === 1 && current[0]?.kind === 'directory') {
-        const only = current[0]
-        names.push(only.name)
-        current = await list(only.path)
-      }
-      setChain(names)
-      setChildren(current)
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
-    }
-  }, [entry, expanded, children, onOpenFile])
+  // Refetch when this directory changes on disk, but only if it is open —
+  // a collapsed node reloads when it is next expanded anyway.
+  useEffect(
+    () =>
+      window.claven.subscribe('fs:invalidate', (payload) => {
+        if (expanded && payload.path === chainPath) void load()
+      }),
+    [expanded, chainPath, load]
+  )
 
   const isActive = activePath === entry.path
   const isArtifact = entry.kind === 'file' && ARTIFACT.test(entry.name)
@@ -85,6 +110,7 @@ function TreeNode({ entry, depth, activePath, onOpenFile }: NodeProps): React.JS
     <>
       <button
         onClick={() => void toggle()}
+        onContextMenu={(event) => onContextMenu(entry, event)}
         title={entry.path}
         style={{ paddingInlineStart: `${depth * INDENT + 8}px` }}
         className={`relative flex w-full items-center gap-1.5 py-[3px] pe-2 text-start text-[13px] transition-colors ${
@@ -131,6 +157,7 @@ function TreeNode({ entry, depth, activePath, onOpenFile }: NodeProps): React.JS
             depth={depth + 1}
             activePath={activePath}
             onOpenFile={onOpenFile}
+            onContextMenu={onContextMenu}
           />
         ))}
     </>
@@ -142,9 +169,16 @@ type Props = {
   activePath: string | null
   onOpenFile: (path: string) => void
   onOpenFolder: () => void
+  onContextMenu: (entry: DirEntry | null, event: React.MouseEvent) => void
 }
 
-export function FileTree({ root, activePath, onOpenFile, onOpenFolder }: Props): React.JSX.Element {
+export function FileTree({
+  root,
+  activePath,
+  onOpenFile,
+  onOpenFolder,
+  onContextMenu
+}: Props): React.JSX.Element {
   const [entries, setEntries] = useState<DirEntry[]>([])
   const [width, setWidth] = useState(() => {
     const stored = Number(localStorage.getItem(WIDTH_KEY))
@@ -152,13 +186,25 @@ export function FileTree({ root, activePath, onOpenFile, onOpenFolder }: Props):
   })
   const dragging = useRef(false)
 
-  useEffect(() => {
+  const reload = useCallback(() => {
     if (root === null) {
       setEntries([])
       return
     }
-    void list(root).then(setEntries).catch(() => setEntries([]))
+    void list(root)
+      .then(setEntries)
+      .catch(() => setEntries([]))
   }, [root])
+
+  useEffect(reload, [reload])
+
+  useEffect(
+    () =>
+      window.claven.subscribe('fs:invalidate', (payload) => {
+        if (payload.path === root) reload()
+      }),
+    [root, reload]
+  )
 
   useEffect(() => {
     const onMove = (event: MouseEvent): void => {
@@ -207,7 +253,14 @@ export function FileTree({ root, activePath, onOpenFile, onOpenFolder }: Props):
         </button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto py-1">
+      {/* Right-clicking the empty area below the tree targets the root, which
+          is how you make a file at the top level. */}
+      <div
+        className="min-h-0 flex-1 overflow-auto py-1"
+        onContextMenu={(event) => {
+          if (event.target === event.currentTarget) onContextMenu(null, event)
+        }}
+      >
         {root !== null && entries.length === 0 && (
           <p className="text-ink-dim px-3 py-2 text-xs">empty folder</p>
         )}
@@ -218,6 +271,7 @@ export function FileTree({ root, activePath, onOpenFile, onOpenFolder }: Props):
             depth={0}
             activePath={activePath}
             onOpenFile={onOpenFile}
+            onContextMenu={onContextMenu}
           />
         ))}
       </div>
