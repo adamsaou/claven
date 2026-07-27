@@ -4,6 +4,7 @@ import { dirname, join, relative, sep } from 'node:path'
 import { handle, emit, assertEveryChannelHandled } from './ipc'
 import { getWorkspaceRoot, resolveInsideWorkspace, setWorkspaceRoot } from './workspace'
 import { readTextFile, writeTextFile } from './textfile'
+import { loadSession, saveSession } from './session'
 import type { DirEntry } from '../shared/files'
 
 /** Directories never worth walking or listing. */
@@ -174,6 +175,21 @@ export function registerHandlers(): void {
 
   handle('app:setDirtyCount', (request) => {
     dirtyCount = request.count
+    return {}
+  })
+
+  handle('session:load', async () => {
+    const session = await loadSession()
+    // Restoring the workspace root here means the tree and quick-open work
+    // immediately on launch, without waiting for the renderer to ask.
+    if (session?.root != null) {
+      await setWorkspaceRoot(session.root).catch(() => undefined)
+    }
+    return { session }
+  })
+
+  handle('session:save', async (request) => {
+    await saveSession(request.session)
     return {}
   })
 

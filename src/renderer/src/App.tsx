@@ -58,13 +58,73 @@ export default function App(): React.JSX.Element {
   const active = tabs.find((tab) => tab.path === activePath) ?? null
   const dirty = active !== null && active.content !== active.saved
 
+  const [cursors, setCursors] = useState<Record<string, { line: number; column: number }>>({})
+  const [restored, setRestored] = useState(false)
+
   useEffect(() => {
-    void window.claven.invoke('workspace:current', {}).then((result) => {
-      if (result.ok) setRoot(result.value.root)
-    })
     // Proves the push channel end to end: the root also arrives unsolicited.
     return window.claven.subscribe('workspace:changed', (payload) => setRoot(payload.root))
   }, [])
+
+  /**
+   * Restore the last session. Every restart used to be a blank slate, which
+   * meant reopening the same five files by hand each time.
+   */
+  useEffect(() => {
+    void (async () => {
+      const loaded = await window.claven.invoke('session:load', {})
+      if (!loaded.ok || loaded.value.session === null) {
+        setRestored(true)
+        return
+      }
+      const session = loaded.value.session
+      setRoot(session.root)
+      setCursors(session.cursors)
+
+      // Read them in parallel; a file that has since been deleted or renamed
+      // is skipped rather than treated as an error.
+      const opened = await Promise.all(
+        session.openPaths.map(async (path) => {
+          const result = await window.claven.invoke('fs:read', { path })
+          if (!result.ok || result.value.kind !== 'text') return null
+          return {
+            path,
+            name: path.split(/[\\/]/).pop() ?? path,
+            content: result.value.content,
+            saved: result.value.content,
+            meta: result.value.meta
+          }
+        })
+      )
+      const usable = opened.filter((tab): tab is Tab => tab !== null)
+      setTabs(usable)
+      setActivePath(
+        usable.some((tab) => tab.path === session.activePath)
+          ? session.activePath
+          : (usable.at(-1)?.path ?? null)
+      )
+      setRestored(true)
+    })()
+  }, [])
+
+  /**
+   * Persist after the restore has run, never before — writing during startup
+   * would save an empty tab list over the session we are about to read.
+   */
+  useEffect(() => {
+    if (!restored) return
+    const timer = setTimeout(() => {
+      void window.claven.invoke('session:save', {
+        session: {
+          root,
+          openPaths: tabs.map((tab) => tab.path),
+          activePath,
+          cursors
+        }
+      })
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [restored, root, tabs, activePath, cursors])
 
   // The window title is the fastest way to know which file is focused when
   // Claven is one of eight things in the taskbar.
@@ -517,7 +577,14 @@ export default function App(): React.JSX.Element {
                 )
               }
               onSave={() => void save()}
-              onCursor={setCursor}
+              initialCursor={cursors[active.path]}
+              onCursor={(position) => {
+                setCursor(position)
+                setCursors((current) => ({
+                  ...current,
+                  [active.path]: { line: position.line, column: position.column }
+                }))
+              }}
             />
           ) : (
             <div className="text-ink-dim flex h-full flex-col items-center justify-center gap-1 text-[13px]">

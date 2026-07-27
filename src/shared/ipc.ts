@@ -114,6 +114,29 @@ export type IpcContract = {
     request: { count: number }
     response: Record<string, never>
   }
+
+  /**
+   * Session restore. Stored in the app's userData rather than localStorage so
+   * it survives a cleared renderer profile and can be inspected by a human.
+   */
+  'session:load': {
+    request: Record<string, never>
+    response: { session: Session | null }
+  }
+
+  'session:save': {
+    request: { session: Session }
+    response: Record<string, never>
+  }
+}
+
+/** What is worth restoring. Deliberately not the file contents — those live on disk. */
+export type Session = {
+  root: string | null
+  openPaths: string[]
+  activePath: string | null
+  /** Keyed by path, so reopening a file lands where you left it. */
+  cursors: Record<string, { line: number; column: number }>
 }
 
 export type IpcChannel = keyof IpcContract & string
@@ -150,7 +173,9 @@ export const IPC_CHANNELS = [
   'fs:reveal',
   'fs:walk',
   'dialog:confirmDiscard',
-  'app:setDirtyCount'
+  'app:setDirtyCount',
+  'session:load',
+  'session:save'
 ] as const
 
 /**

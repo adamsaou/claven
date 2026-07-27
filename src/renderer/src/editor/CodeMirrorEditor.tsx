@@ -89,6 +89,8 @@ type Props = {
   onChange: (value: string) => void
   onSave: () => void
   onCursor?: (position: CursorPosition) => void
+  /** Where to place the cursor on mount, restoring a saved session. */
+  initialCursor?: { line: number; column: number }
 }
 
 export function CodeMirrorEditor({
@@ -96,7 +98,8 @@ export function CodeMirrorEditor({
   language,
   onChange,
   onSave,
-  onCursor
+  onCursor,
+  initialCursor
 }: Props): React.JSX.Element {
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
@@ -166,6 +169,18 @@ export function CodeMirrorEditor({
 
     const instance = new EditorView({ state, parent: host.current })
     view.current = instance
+
+    // Restore the cursor from the session. Clamped, because the file may have
+    // been edited elsewhere since and a stale line number would throw.
+    if (initialCursor !== undefined) {
+      const lineCount = instance.state.doc.lines
+      const line = instance.state.doc.line(Math.min(Math.max(initialCursor.line, 1), lineCount))
+      const position = Math.min(line.from + initialCursor.column - 1, line.to)
+      instance.dispatch({
+        selection: { anchor: position },
+        effects: EditorView.scrollIntoView(position, { y: 'center' })
+      })
+    }
     return () => {
       instance.destroy()
       view.current = null
