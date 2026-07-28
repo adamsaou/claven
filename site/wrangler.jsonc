@@ -3,6 +3,15 @@
   "name": "claven",
   "compatibility_date": "2026-07-28",
 
+  // Stated rather than defaulted, so the deploy stops warning about both on
+  // every build. Flip workers_dev to false once claven.dev is attached: the
+  // canonical tags all point at claven.dev, and serving the identical site on
+  // two hostnames is a duplicate a crawler has to resolve.
+  "workers_dev": true,
+  // Only `main` exists. Nothing produces a preview URL, so nothing should
+  // publish one.
+  "preview_urls": false,
+
   /**
    * Assets only — there is no `main`, and that is deliberate. The site is
    * static files; a Worker script in front of them would be code running on
@@ -13,9 +22,16 @@
    */
   "assets": {
     "directory": "./dist",
-    // Astro emits /log/index.html rather than /log.html, and auto-trailing-slash
-    // is what maps a bare /log onto it.
-    "html_handling": "auto-trailing-slash",
+    /**
+     * drop-trailing-slash, to agree with astro's `trailingSlash: 'never'`.
+     *
+     * auto-trailing-slash was wrong and the first deploy proved it: astro
+     * publishes /docs in both the canonical tag and the sitemap, and auto
+     * answered that with a 307 to /docs/. Every internal link cost a round
+     * trip and every sitemap URL handed a crawler a redirect to a page whose
+     * canonical then pointed back at the redirected-from address.
+     */
+    "html_handling": "drop-trailing-slash",
     // Serve the real 404 page rather than an empty Cloudflare error. Not
     // "single-page-application" — this is a multi-page static site, and that
     // setting would answer every dead URL with 200 and the homepage.
