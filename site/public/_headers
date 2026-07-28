@@ -1,0 +1,29 @@
+# Response headers for the static site. Cloudflare reads this from the built
+# assets directory, and everything in public/ is copied there verbatim.
+#
+# The Content-Security-Policy is NOT here. Astro emits it per page as a meta
+# element containing a hash of every script and style it bundled, which a
+# hand-written header cannot do without going stale on the next build. Two
+# policies would both apply and the stricter would win per directive, so a
+# second one here would only ever break things. See `security.csp` in
+# astro.config.mjs.
+#
+# Deliberately absent: Strict-Transport-Security. HSTS is the one header here
+# that is genuinely hard to take back — browsers honour it for its full
+# max-age whatever you serve afterwards — so it should be a decision made on
+# purpose rather than inherited from a config file.
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  # frame-ancestors is ignored inside a meta element, so framing is refused
+  # here instead. No page on this site has any business being framed.
+  X-Frame-Options: DENY
+  # Nothing here uses any of them.
+  Permissions-Policy: geolocation=(), microphone=(), camera=(), payment=(), usb=()
+
+# Fingerprinted filenames, so they can be cached permanently: Astro puts a
+# content hash in the name, and a change produces a new URL rather than a
+# stale cache.
+/_astro/*
+  Cache-Control: public, max-age=31536000, immutable

@@ -3,11 +3,10 @@
   "name": "claven",
   "compatibility_date": "2026-07-28",
 
-  // Stated rather than defaulted, so the deploy stops warning about both on
-  // every build. Flip workers_dev to false once claven.dev is attached: the
-  // canonical tags all point at claven.dev, and serving the identical site on
-  // two hostnames is a duplicate a crawler has to resolve.
-  "workers_dev": true,
+  // Off since claven.dev was attached. Every canonical tag on the site points
+  // at claven.dev, and serving the identical pages on a second hostname is a
+  // duplicate a crawler has to resolve and a second URL people can bookmark.
+  "workers_dev": false,
   // Only `main` exists. Nothing produces a preview URL, so nothing should
   // publish one.
   "preview_urls": false,

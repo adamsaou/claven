@@ -1,34 +1,35 @@
----
-import { REPO } from '../lib/github'
----
-
 {/*
   Corrects the built-in commit count in the browser, so the number is right
   between deploys rather than right at deploy.
 
-  Inline and dependency-free: one fetch, no key, no backend. Unauthenticated
-  callers get 60 requests an hour per IP, which for this site is plenty and
-  fails safe anyway — if the request is refused, rate-limited or the visitor is
-  offline, the server-rendered number simply stays put. Nothing flickers and
-  nothing empties.
+  Bundled rather than inline. It costs one small request, and it buys a
+  content-security-policy with `script-src 'self'` and no 'unsafe-inline' —
+  which is worth more than the request, on a page whose only script this is.
+  It also means the Link-header parsing is imported from the same module the
+  build-time fetch uses, instead of being written out twice and drifting.
+
+  One fetch, no key, no backend. Unauthenticated callers get 60 requests an
+  hour per IP, and it fails safe: if the request is refused, rate-limited or
+  the visitor is offline, the server-rendered number stays. Nothing flickers
+  and nothing empties.
 */}
-<script is:inline define:vars={{ repo: REPO }}>
+<script>
+  import { REPO, commitCountFromLinkHeader } from '../lib/github'
+
   const target = document.querySelector('[data-commit-count]')
   if (target !== null) {
-    fetch(`https://api.github.com/repos/${repo}/commits?per_page=1`, {
+    void fetch(`https://api.github.com/repos/${REPO}/commits?per_page=1`, {
       headers: { accept: 'application/vnd.github+json' }
     })
       .then((response) => {
         if (!response.ok) return null
-        const link = response.headers.get('link')
-        if (link === null) return 1
-        const last = /[?&]page=(\d+)>;\s*rel="last"/.exec(link)
-        return last === null ? null : Number.parseInt(last[1], 10)
+        // No Link header at all means a single page, so a single commit.
+        return response.headers.get('link') === null
+          ? 1
+          : commitCountFromLinkHeader(response.headers.get('link'))
       })
       .then((count) => {
-        if (typeof count === 'number' && Number.isFinite(count) && count > 0) {
-          target.textContent = count.toLocaleString()
-        }
+        if (count !== null) target.textContent = count.toLocaleString()
       })
       .catch(() => {
         /* Keep whatever the build put there. */

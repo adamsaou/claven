@@ -23,6 +23,46 @@ export default defineConfig({
    * host has not been chosen yet.
    */
   build: { format: 'directory' },
+
+  /**
+   * Content Security Policy, emitted per page as a meta element.
+   *
+   * Astro fills in script-src and style-src itself with a hash of every script
+   * and style it bundled, which is why this is worth more than a hand-written
+   * header: the hashes change with the content and cannot go stale.
+   *
+   * The 'unsafe-inline' below is the one concession, and it is not optional.
+   * The chrome sets motion and radius tokens through style="" attributes;
+   * those are governed by style-src-attr, and hashes do not apply to
+   * attributes — without it the layout loses its inline styles entirely.
+   * `kind: 'attribute'` is what keeps the concession there and off style-src
+   * itself, so <style> blocks stay on hashes.
+   *
+   * frame-ancestors is deliberately not here: it is ignored inside a meta
+   * element. X-Frame-Options in public/_headers covers it instead.
+   */
+  security: {
+    csp: {
+      directives: [
+        "default-src 'self'",
+        "img-src 'self' data:",
+        // `data:` is not optional here. Vite inlines any font subset under its
+        // asset limit as a data URI, and several of the smaller Greek and
+        // Cyrillic ranges land under it — with 'self' alone the browser
+        // refuses exactly those and falls back to a system face for them,
+        // quietly, on the ranges least likely to be noticed.
+        "font-src 'self' data:",
+        // The commit ticker's one call, and nothing else.
+        "connect-src 'self' https://api.github.com",
+        "base-uri 'none'",
+        "form-action 'none'",
+        "object-src 'none'"
+      ],
+      styleDirective: {
+        resources: [{ resource: "'unsafe-inline'", kind: 'attribute' }]
+      }
+    }
+  },
   vite: {
     plugins: [tailwind()]
   }
