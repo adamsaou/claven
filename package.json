@@ -15,6 +15,7 @@
     "build": "npm run typecheck && electron-vite build",
     "start": "electron-vite preview",
     "smoke": "electron-vite build && electron . --smoke",
+    "drive": "electron-vite build && node tests/drive.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.node.json --composite false && tsc --noEmit -p tsconfig.web.json --composite false",
     "lint": "node tests/check-boundaries.mjs",
     "fixtures": "node tests/generate-fixtures.mjs",

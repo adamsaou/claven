@@ -173,6 +173,24 @@ export function registerHandlers(): void {
     return { action: (['save', 'discard', 'cancel'] as const)[response] ?? 'cancel' }
   })
 
+  handle('dialog:resolveConflict', async (request, event) => {
+    const window = BrowserWindow.fromWebContents(event.sender)
+    const options = {
+      type: 'warning' as const,
+      buttons: ['overwrite', 'discard mine and reload', 'cancel'],
+      // Cancel is the default: both other answers destroy one version of the
+      // file, and neither is obviously the right one from here.
+      defaultId: 2,
+      cancelId: 2,
+      message: `${request.name} changed on disk`,
+      detail: 'it was modified outside claven since you opened it.'
+    }
+    const { response } = window
+      ? await dialog.showMessageBox(window, options)
+      : await dialog.showMessageBox(options)
+    return { action: (['overwrite', 'reload', 'cancel'] as const)[response] ?? 'cancel' }
+  })
+
   handle('app:setDirtyCount', (request) => {
     dirtyCount = request.count
     return {}

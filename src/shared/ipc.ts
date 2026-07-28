@@ -107,6 +107,19 @@ export type IpcContract = {
   }
 
   /**
+   * The file changed on disk since it was opened and a save was refused.
+   *
+   * Without this the mtime guard is a trap rather than a safety net: it blocks
+   * the write, and there is no second move. `git pull` with a file open meant
+   * every subsequent save failed and the only way out was closing the tab and
+   * discarding the work.
+   */
+  'dialog:resolveConflict': {
+    request: { name: string }
+    response: { action: 'overwrite' | 'reload' | 'cancel' }
+  }
+
+  /**
    * Tells main how many tabs are dirty so it can guard the window close.
    * The renderer cannot veto a window close on its own.
    */
@@ -173,6 +186,7 @@ export const IPC_CHANNELS = [
   'fs:reveal',
   'fs:walk',
   'dialog:confirmDiscard',
+  'dialog:resolveConflict',
   'app:setDirtyCount',
   'session:load',
   'session:save'

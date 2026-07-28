@@ -169,11 +169,14 @@ export async function writeTextFile(
     }
   }
 
-  let text = content
-  if (meta.hadTrailingNewline && !text.endsWith('\n')) text += '\n'
-  else if (!meta.hadTrailingNewline && text.endsWith('\n')) text = text.slice(0, -1)
-
-  const bytes = encode(denormalizeFromLf(text, meta.lineEnding), meta.encoding)
+  /**
+   * The buffer is written as-is. There used to be a step here that forced the
+   * trailing newline back to whatever the file had when it was opened, which
+   * preserved nothing the buffer would not have preserved anyway — and made it
+   * impossible to add a final newline to a file that lacked one, or remove one
+   * from a file that had it. The edit went in, the save silently undid it.
+   */
+  const bytes = encode(denormalizeFromLf(content, meta.lineEnding), meta.encoding)
 
   const temporary = join(dirname(path), `.${basename(path)}.${randomBytes(6).toString('hex')}.tmp`)
   try {

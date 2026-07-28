@@ -8,6 +8,7 @@ import { ContextMenu, type MenuItem, type MenuRequest } from './ContextMenu'
 import { ActivityBar, type Container } from './ActivityBar'
 import { Icon, iconForPath } from './Icons'
 import type { DirEntry, LineEnding } from '../../shared/files'
+import type { IpcResult } from '../../shared/ipc'
 import { CodeMirrorEditor, languageForPath, type CursorPosition } from './editor/CodeMirrorEditor'
 import type { FileMeta } from '../../shared/files'
 
@@ -21,6 +22,15 @@ type Tab = {
 }
 
 type Notice = { kind: 'info' | 'error'; text: string } | null
+
+/**
+ * True for a path and for anything inside it. Both separators are checked
+ * because a path can reach here from the tree (platform separator) or from a
+ * relative join (forward slash).
+ */
+function isUnder(path: string, root: string): boolean {
+  return path === root || path.startsWith(`${root}/`) || path.startsWith(`${root}\\`)
+}
 
 /** Voice, per BRAND.md: terse, mechanical, lowercase in-product. */
 const LANGUAGE_LABEL: Record<string, string> = {
@@ -57,6 +67,7 @@ export default function App(): React.JSX.Element {
 
   const active = tabs.find((tab) => tab.path === activePath) ?? null
   const dirty = active !== null && active.content !== active.saved
+  const openDocIds = useMemo(() => tabs.map((tab) => tab.path), [tabs])
 
   const [cursors, setCursors] = useState<Record<string, { line: number; column: number }>>({})
   const [restored, setRestored] = useState(false)
@@ -166,11 +177,30 @@ export default function App(): React.JSX.Element {
         })
         return
       }
+      /**
+       * Key the tab on the path main resolved, never on the one the caller
+       * typed. The tree builds paths with the platform separator and quick-open
+       * joins with a forward slash, so the same file arrived under two different
+       * strings and opened twice — two tabs, two edit buffers, and whichever
+       * saved second failed the changed-on-disk check.
+       */
+      const canonical = value.meta.path
+      const existing = tabs.find((tab) => tab.path === canonical)
+      if (existing !== undefined) {
+        setActivePath(canonical)
+        return
+      }
       setTabs((current) => [
         ...current,
-        { path, name, content: value.content, saved: value.content, meta: value.meta }
+        {
+          path: canonical,
+          name: canonical.split(/[\\/]/).pop() ?? name,
+          content: value.content,
+          saved: value.content,
+          meta: value.meta
+        }
       ])
-      setActivePath(path)
+      setActivePath(canonical)
       setNotice(
         value.meta.mixedLineEndings
           ? { kind: 'info', text: `mixed line endings — saving normalises to ${value.meta.lineEnding}` }
@@ -180,15 +210,51 @@ export default function App(): React.JSX.Element {
     [tabs]
   )
 
+  /** Throw away the buffer and take what is on disk. Only ever called with consent. */
+  const reloadFromDisk = useCallback(async (path: string) => {
+    const result = await window.claven.invoke('fs:read', { path })
+    if (!result.ok || result.value.kind !== 'text') {
+      setNotice({ kind: 'error', text: `could not reload ${path}` })
+      return
+    }
+    const { content, meta } = result.value
+    setTabs((current) =>
+      current.map((tab) => (tab.path === path ? { ...tab, content, saved: content, meta } : tab))
+    )
+    setNotice({ kind: 'info', text: 'reloaded from disk' })
+  }, [])
+
   const save = useCallback(async () => {
     if (!active || active.content === active.saved) return
     const started = performance.now()
-    const result = await window.claven.invoke('fs:write', {
-      path: active.path,
-      content: active.content,
-      meta: active.meta,
-      expectedMtimeMs: active.meta.mtimeMs
-    })
+    const write = (expectedMtimeMs: number | null): Promise<IpcResult<{ meta: FileMeta }>> =>
+      window.claven.invoke('fs:write', {
+        path: active.path,
+        content: active.content,
+        meta: active.meta,
+        expectedMtimeMs
+      })
+
+    let result = await write(active.meta.mtimeMs)
+
+    /**
+     * The mtime guard refused. Offer a way out rather than leaving the tab
+     * permanently unsaveable — that is what it used to do, and the only escape
+     * was closing the tab and losing the edits.
+     */
+    if (!result.ok && result.error.code === 'CHANGED_ON_DISK') {
+      const answer = await window.claven.invoke('dialog:resolveConflict', { name: active.name })
+      if (!answer.ok || answer.value.action === 'cancel') {
+        setNotice({ kind: 'error', text: result.error.message })
+        return
+      }
+      if (answer.value.action === 'reload') {
+        await reloadFromDisk(active.path)
+        return
+      }
+      result = await write(null)
+    }
+
     if (!result.ok) {
       setNotice({ kind: 'error', text: result.error.message })
       return
@@ -199,19 +265,52 @@ export default function App(): React.JSX.Element {
     )
     // "Opened 2.1 GB in 0.8s." — state what happened and how long it took.
     setNotice({ kind: 'info', text: `saved in ${Math.round(performance.now() - started)}ms` })
-  }, [active])
+  }, [active, reloadFromDisk])
 
-  const forceCloseTab = useCallback((path: string) => {
+  const forceCloseTabs = useCallback((matches: (path: string) => boolean) => {
     setTabs((current) => {
-      const index = current.findIndex((tab) => tab.path === path)
-      const next = current.filter((tab) => tab.path !== path)
+      const index = current.findIndex((tab) => matches(tab.path))
+      const next = current.filter((tab) => !matches(tab.path))
       setActivePath((currentActive) => {
-        if (currentActive !== path) return currentActive
+        if (currentActive === null || !matches(currentActive)) return currentActive
         // Focus the neighbour rather than jumping to the end of the strip.
         return next[Math.min(index, next.length - 1)]?.path ?? null
       })
       return next
     })
+  }, [])
+
+  const forceCloseTab = useCallback(
+    (path: string) => forceCloseTabs((candidate) => candidate === path),
+    [forceCloseTabs]
+  )
+
+  /**
+   * A file was renamed or moved. The tab follows it rather than being closed —
+   * closing it threw away unsaved edits, which is a rename doing the job of a
+   * discard. Directories carry their open children along.
+   */
+  const remapTabs = useCallback((from: string, to: string) => {
+    const moved = (path: string): string | null =>
+      isUnder(path, from) ? to + path.slice(from.length) : null
+    setTabs((current) =>
+      current.map((tab) => {
+        const next = moved(tab.path)
+        if (next === null) return tab
+        return {
+          ...tab,
+          path: next,
+          name: next.split(/[\\/]/).pop() ?? next,
+          meta: { ...tab.meta, path: next }
+        }
+      })
+    )
+    setActivePath((current) => (current === null ? null : (moved(current) ?? current)))
+    setCursors((current) =>
+      Object.fromEntries(
+        Object.entries(current).map(([path, at]) => [moved(path) ?? path, at])
+      )
+    )
   }, [])
 
   /**
@@ -249,10 +348,14 @@ export default function App(): React.JSX.Element {
 
   // Main cannot see React state, and a renderer cannot veto its own window
   // closing — so the count has to be pushed for the close guard to work.
+  //
+  // Derived first and pushed on the count, not on `tabs`: the tab array changes
+  // identity on every keystroke, and pushing on that meant an IPC round trip
+  // per character typed.
+  const dirtyCount = tabs.filter((tab) => tab.content !== tab.saved).length
   useEffect(() => {
-    const count = tabs.filter((tab) => tab.content !== tab.saved).length
-    void window.claven.invoke('app:setDirtyCount', { count })
-  }, [tabs])
+    void window.claven.invoke('app:setDirtyCount', { count: dirtyCount })
+  }, [dirtyCount])
 
   const openRelative = useCallback(
     (relativePath: string) => {
@@ -328,7 +431,7 @@ export default function App(): React.JSX.Element {
                     .invoke('fs:rename', { from: entry.path, to })
                     .then((result) => {
                       if (!result.ok) setNotice({ kind: 'error', text: result.error.message })
-                      else forceCloseTab(entry.path)
+                      else remapTabs(entry.path, result.value.path)
                     })
                 }
               })
@@ -341,7 +444,10 @@ export default function App(): React.JSX.Element {
               void window.claven.invoke('fs:delete', { path: entry.path }).then((result) => {
                 if (!result.ok) setNotice({ kind: 'error', text: result.error.message })
                 else {
-                  forceCloseTab(entry.path)
+                  // Everything inside a deleted folder, not just the folder —
+                  // its open files were left pointing at paths that no longer
+                  // exist, and only said so when you tried to save one.
+                  forceCloseTabs((path) => isUnder(path, entry.path))
                   setNotice({ kind: 'info', text: `moved ${entry.name} to trash` })
                 }
               })
@@ -356,7 +462,7 @@ export default function App(): React.JSX.Element {
       }
       return items
     },
-    [root, openFile, forceCloseTab]
+    [root, openFile, forceCloseTabs, remapTabs]
   )
 
   const cycleTab = useCallback(
@@ -568,7 +674,8 @@ export default function App(): React.JSX.Element {
         <div className="min-h-0 flex-1">
           {active ? (
             <CodeMirrorEditor
-              key={active.path}
+              docId={active.path}
+              openDocIds={openDocIds}
               value={active.content}
               language={languageForPath(active.path)}
               onChange={(content) =>

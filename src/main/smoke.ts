@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { BrowserWindow } from 'electron'
@@ -155,6 +155,69 @@ export async function runSmokeTest(window: BrowserWindow): Promise<number> {
       !written.ok ? `write failed: ${written.error.message}`
         : expectIdentical ? (identical ? 'bytes identical' : 'BYTES CHANGED')
         : (identical ? 'expected normalization, got none' : 'normalized as expected'))
+  }
+
+  // ---- the buffer is what gets written, including at the end of the file --
+
+  // A save used to force the trailing newline back to whatever the file had
+  // when it was opened, so adding one was impossible: the edit went in and the
+  // save quietly took it out again.
+  {
+    const path = join(fixtures, 'no-trailing-newline.txt')
+    const opened = await read('no-trailing-newline.txt')
+    const ok = opened.ok && opened.value.kind === 'text'
+    const written = ok && opened.value.kind === 'text'
+      ? await invoke<Ok<{ meta: FileMeta }> | Err>('fs:write', {
+          path,
+          content: `${opened.value.content}\n`,
+          meta: opened.value.meta,
+          expectedMtimeMs: opened.value.meta.mtimeMs
+        })
+      : null
+    const after = await readFile(path, 'utf8').catch(() => '')
+    add('a trailing newline can be added', written?.ok === true && after.endsWith('\n'),
+      written?.ok === true ? `file ends with newline: ${after.endsWith('\n')}` : 'write failed')
+
+    const removed = written?.ok === true
+      ? await invoke<Ok<{ meta: FileMeta }> | Err>('fs:write', {
+          path,
+          content: after.replace(/\n$/, ''),
+          meta: written.value.meta,
+          expectedMtimeMs: written.value.meta.mtimeMs
+        })
+      : null
+    const back = await readFile(path, 'utf8').catch(() => 'x\n')
+    add('a trailing newline can be removed', removed?.ok === true && !back.endsWith('\n'),
+      removed?.ok === true ? `file ends with newline: ${back.endsWith('\n')}` : 'write failed')
+  }
+
+  // ---- the changed-on-disk guard, and the way out of it ------------------
+
+  {
+    const path = join(fixtures, 'lf.txt')
+    const opened = await read('lf.txt')
+    const stale = opened.ok && opened.value.kind === 'text' ? opened.value.meta : null
+
+    // Touch it behind the editor's back, the way git checkout would.
+    await writeFile(path, 'changed by something else\n', 'utf8')
+
+    const refused = stale
+      ? await invoke<Err>('fs:write', {
+          path, content: 'mine\n', meta: stale, expectedMtimeMs: stale.mtimeMs
+        })
+      : null
+    add('a stale write is refused', refused?.ok === false && refused.error.code === 'CHANGED_ON_DISK',
+      refused?.ok === false ? `refused as ${refused.error.code}` : 'NOT REFUSED — the guard is gone')
+
+    // Passing null is the deliberate overwrite the conflict dialog offers. If
+    // this stops working the dialog becomes a dead end again.
+    const forced = stale
+      ? await invoke<Ok<{ meta: FileMeta }> | Err>('fs:write', {
+          path, content: 'mine\n', meta: stale, expectedMtimeMs: null
+        })
+      : null
+    add('overwrite still works after a conflict', forced?.ok === true,
+      forced?.ok === true ? 'written' : `failed: ${forced?.ok === false ? forced.error.message : 'n/a'}`)
   }
 
   // ---- the sandbox must not be escapable --------------------------------

@@ -74,7 +74,10 @@ body,
 body {
   margin: 0;
   background: var(--color-obsidian);
-  color: var(--color-text);
+  /* --color-ink, not --color-text: the theme block above never defined the
+     latter, so this resolved to nothing and body text fell back to the UA
+     default. Invisible only because every panel sets its own colour. */
+  color: var(--color-ink);
   font-family: var(--font-ui);
   font-size: 13px;
   font-weight: 500;

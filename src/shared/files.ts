@@ -30,7 +30,12 @@ export type FileMeta = {
    * that shows up as a large diff the user did not ask for.
    */
   mixedLineEndings: boolean
-  /** Preserved exactly. Adding or removing a trailing newline is a real diff. */
+  /**
+   * Whether the file ended with a newline when it was opened. Informational —
+   * a save writes whatever the buffer holds, so the user's edit wins. Adding or
+   * removing a trailing newline is a real diff, and a real one to be allowed to
+   * make.
+   */
   hadTrailingNewline: boolean
   /** Used to detect that the file changed underneath us before we overwrite it. */
   mtimeMs: number

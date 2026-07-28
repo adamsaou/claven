@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 import { EditorState, type Extension } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
@@ -84,18 +84,27 @@ function languageExtension(language: EditorLanguage): Extension[] {
 export type CursorPosition = { line: number; column: number; selected: number }
 
 type Props = {
+  /** Identity of the document on screen — the file path. Switching this swaps documents. */
+  docId: string
   value: string
   language: EditorLanguage
+  /** Every open document. State cached for anything not listed here is dropped. */
+  openDocIds: string[]
   onChange: (value: string) => void
   onSave: () => void
   onCursor?: (position: CursorPosition) => void
-  /** Where to place the cursor on mount, restoring a saved session. */
+  /** Where to place the cursor the first time a document is opened. */
   initialCursor?: { line: number; column: number }
 }
 
+/** What has to survive a tab switch. Scroll is not part of EditorState, so it rides along. */
+type Cached = { state: EditorState; scrollTop: number }
+
 export function CodeMirrorEditor({
+  docId,
   value,
   language,
+  openDocIds,
   onChange,
   onSave,
   onCursor,
@@ -112,94 +121,157 @@ export function CodeMirrorEditor({
   latestSave.current = onSave
   latestCursor.current = onCursor
 
-  useEffect(() => {
-    if (!host.current) return
+  /**
+   * One EditorState per open file, and one view that swaps between them.
+   *
+   * The obvious implementation — a React `key` on the path, so switching tabs
+   * remounts the editor — throws away undo history, selection, scroll position
+   * and folds every single time. Switching to another file to check something
+   * and coming back to a dead ctrl+z is the kind of thing you stop noticing and
+   * start working around, which is worse.
+   */
+  const cache = useRef(new Map<string, Cached>())
+  /** Which document the live view currently holds. */
+  const mounted = useRef<string | null>(null)
 
-    const state = EditorState.create({
-      doc: value,
-      extensions: [
-        lineNumbers(),
-        foldGutter(),
-        history(),
-        drawSelection(),
-        indentOnInput(),
-        bracketMatching(),
-        highlightActiveLine(),
-        highlightSelectionMatches(),
-        // Fallback only — clavenDark's HighlightStyle takes precedence for any
-        // tag it defines. This keeps unstyled tags from rendering flat.
-        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-        // Per-line base direction. This is the whole reason Arabic and Hebrew
-        // render correctly here and do not in Zed (RTL tracking issue: 2 of 52
-        // subtasks done after 14 months) or VS Code (#11770, open since 2016).
-        // CodeMirror already ships the Unicode Bidi Algorithm; this turns it on
-        // per line instead of forcing one direction on the whole document.
-        EditorView.perLineTextDirection.of(true),
-        keymap.of([
-          {
-            key: 'Mod-s',
-            preventDefault: true,
-            run: () => {
-              latestSave.current()
-              return true
+  const buildState = useCallback(
+    (doc: string, forLanguage: EditorLanguage): EditorState =>
+      EditorState.create({
+        doc,
+        extensions: [
+          lineNumbers(),
+          foldGutter(),
+          history(),
+          drawSelection(),
+          indentOnInput(),
+          bracketMatching(),
+          highlightActiveLine(),
+          highlightSelectionMatches(),
+          // Fallback only — clavenDark's HighlightStyle takes precedence for any
+          // tag it defines. This keeps unstyled tags from rendering flat.
+          syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+          // Per-line base direction. This is the whole reason Arabic and Hebrew
+          // render correctly here and do not in Zed (RTL tracking issue: 2 of 52
+          // subtasks done after 14 months) or VS Code (#11770, open since 2016).
+          // CodeMirror already ships the Unicode Bidi Algorithm; this turns it on
+          // per line instead of forcing one direction on the whole document.
+          EditorView.perLineTextDirection.of(true),
+          keymap.of([
+            {
+              key: 'Mod-s',
+              preventDefault: true,
+              run: () => {
+                latestSave.current()
+                return true
+              }
+            },
+            ...defaultKeymap,
+            ...historyKeymap,
+            ...searchKeymap,
+            indentWithTab
+          ]),
+          EditorView.updateListener.of((update) => {
+            if (update.docChanged) latestChange.current(update.state.doc.toString())
+            if (update.docChanged || update.selectionSet) {
+              const range = update.state.selection.main
+              const line = update.state.doc.lineAt(range.head)
+              latestCursor.current?.({
+                line: line.number,
+                // Editors count columns from 1, and the doc indexes from 0.
+                column: range.head - line.from + 1,
+                selected: Math.abs(range.to - range.from)
+              })
             }
-          },
-          ...defaultKeymap,
-          ...historyKeymap,
-          ...searchKeymap,
-          indentWithTab
-        ]),
-        EditorView.updateListener.of((update) => {
-          if (update.docChanged) latestChange.current(update.state.doc.toString())
-          if (update.docChanged || update.selectionSet) {
-            const range = update.state.selection.main
-            const line = update.state.doc.lineAt(range.head)
-            latestCursor.current?.({
-              line: line.number,
-              // Editors count columns from 1, and the doc indexes from 0.
-              column: range.head - line.from + 1,
-              selected: Math.abs(range.to - range.from)
-            })
-          }
-        }),
-        clavenDark,
-        ...languageExtension(language)
-      ]
+          }),
+          clavenDark,
+          ...languageExtension(forLanguage)
+        ]
+      }),
+    []
+  )
+
+  /** Put the cursor where the session left it, clamped — the file may have shrunk since. */
+  const placeCursor = useCallback((instance: EditorView, at: { line: number; column: number }) => {
+    const line = instance.state.doc.line(Math.min(Math.max(at.line, 1), instance.state.doc.lines))
+    const position = Math.min(line.from + at.column - 1, line.to)
+    instance.dispatch({
+      selection: { anchor: position },
+      effects: EditorView.scrollIntoView(position, { y: 'center' })
     })
+  }, [])
 
-    const instance = new EditorView({ state, parent: host.current })
+  // The view is built once and lives for as long as the editor is on screen.
+  // Layout effects, both this and the swap below: a passive effect would let
+  // the browser paint one frame of an empty, unstyled editor first.
+  useLayoutEffect(() => {
+    if (!host.current) return
+    const instance = new EditorView({ parent: host.current })
     view.current = instance
-
-    // Restore the cursor from the session. Clamped, because the file may have
-    // been edited elsewhere since and a stale line number would throw.
-    if (initialCursor !== undefined) {
-      const lineCount = instance.state.doc.lines
-      const line = instance.state.doc.line(Math.min(Math.max(initialCursor.line, 1), lineCount))
-      const position = Math.min(line.from + initialCursor.column - 1, line.to)
-      instance.dispatch({
-        selection: { anchor: position },
-        effects: EditorView.scrollIntoView(position, { y: 'center' })
-      })
-    }
     return () => {
       instance.destroy()
       view.current = null
+      mounted.current = null
+      cache.current.clear()
     }
-    // Rebuilt only when the language changes; `value` is synced below so that
-    // typing does not recreate the view and lose the cursor.
+  }, [])
+
+  // Swap documents. Declared before the value sync below so that on a tab
+  // change the new document is in place before anything checks its contents.
+  useLayoutEffect(() => {
+    const instance = view.current
+    if (!instance || mounted.current === docId) return
+
+    // Park the outgoing document before touching the view.
+    if (mounted.current !== null) {
+      cache.current.set(mounted.current, {
+        state: instance.state,
+        scrollTop: instance.scrollDOM.scrollTop
+      })
+    }
+
+    const cached = cache.current.get(docId)
+    instance.setState(cached?.state ?? buildState(value, language))
+    mounted.current = docId
+
+    if (cached === undefined) {
+      cache.current.set(docId, { state: instance.state, scrollTop: 0 })
+      if (initialCursor !== undefined) placeCursor(instance, initialCursor)
+      return
+    }
+
+    // Restoring scroll needs the heights measured. Set it now for the common
+    // case and again after the measure, which is what actually lands.
+    const top = cached.scrollTop
+    instance.scrollDOM.scrollTop = top
+    const frame = requestAnimationFrame(() => {
+      if (view.current === instance && mounted.current === docId) instance.scrollDOM.scrollTop = top
+    })
+    return () => cancelAnimationFrame(frame)
+    // initialCursor is read only when a document is opened for the first time;
+    // listing it would re-run this on every cursor move.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [language])
+  }, [docId, language, buildState, placeCursor])
 
   useEffect(() => {
     const instance = view.current
-    if (!instance) return
+    if (!instance || mounted.current !== docId) return
     const current = instance.state.doc.toString()
-    // Only when the document was replaced from outside (opening a different
-    // file). Dispatching on every keystroke would fight the user's cursor.
+    // Only when the document was replaced from outside — a reload from disk.
+    // Dispatching on every keystroke would fight the user's cursor.
     if (current !== value) {
       instance.dispatch({ changes: { from: 0, to: current.length, insert: value } })
     }
-  }, [value])
+  }, [value, docId])
+
+  // Drop the state of files that are no longer open, so a long session does not
+  // hold every document it has ever shown.
+  const openKey = openDocIds.join('\n')
+  useEffect(() => {
+    const live = new Set(openKey.length === 0 ? [] : openKey.split('\n'))
+    for (const key of cache.current.keys()) {
+      if (!live.has(key) && key !== mounted.current) cache.current.delete(key)
+    }
+  }, [openKey])
 
   return <div ref={host} className="h-full min-h-0 overflow-hidden" />
 }

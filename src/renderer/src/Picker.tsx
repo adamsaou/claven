@@ -137,7 +137,11 @@ export function Picker<T>({
                 data-selected={index === selected}
                 onMouseMove={() => setSelected(index)}
                 onClick={commit}
-                className={`flex w-full items-center gap-3 px-3 py-1.5 text-start text-[13px] transition-colors ${
+                // `relative` is load-bearing. Rows draw the 2px ember rail with
+                // an absolute span; without a positioned ancestor here it
+                // resolved against the modal overlay instead and the scrolling
+                // list clipped it away — accent that never once rendered.
+                className={`relative flex w-full items-center gap-3 px-3 py-1.5 text-start text-[13px] transition-colors ${
                   index === selected ? 'bg-surface-2 text-ink' : 'text-ink-muted'
                 }`}
                 style={{ transitionDuration: 'var(--dur-micro)' }}

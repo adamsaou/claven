@@ -32,8 +32,8 @@ export function CommandPalette({ open, commands, onClose }: Props): React.JSX.El
       onClose={onClose}
       renderRow={(command, match, selected) => (
         <>
-          <span className="relative flex-1 truncate">
-            {selected && <span className="bg-ember absolute inset-y-0 -start-3 w-0.5" />}
+          {selected && <span className="bg-ember absolute inset-y-0 start-0 w-0.5" />}
+          <span className="flex-1 truncate">
             <Highlighted text={command.title} match={match} />
           </span>
           {command.keys !== undefined && (

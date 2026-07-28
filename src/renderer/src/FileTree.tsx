@@ -185,6 +185,7 @@ export function FileTree({
     return Number.isFinite(stored) && stored >= MIN_WIDTH ? stored : 200
   })
   const dragging = useRef(false)
+  const nav = useRef<HTMLElement>(null)
 
   const reload = useCallback(() => {
     if (root === null) {
@@ -209,7 +210,11 @@ export function FileTree({
   useEffect(() => {
     const onMove = (event: MouseEvent): void => {
       if (!dragging.current) return
-      setWidth(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, event.clientX)))
+      // Measured from the sidebar's own left edge, not from the window's. They
+      // are the same today only because the activity bar renders null; the
+      // moment a second container registers, clientX is off by 48px.
+      const left = nav.current?.getBoundingClientRect().left ?? 0
+      setWidth(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, event.clientX - left)))
     }
     const onUp = (): void => {
       if (!dragging.current) return
@@ -229,6 +234,7 @@ export function FileTree({
 
   return (
     <nav
+      ref={nav}
       className="border-line bg-surface-1 relative flex h-full shrink-0 flex-col border-e"
       style={{ width: `${width}px` }}
     >
