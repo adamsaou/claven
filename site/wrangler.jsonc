@@ -1,0 +1,24 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "claven",
+  "compatibility_date": "2026-07-28",
+
+  /**
+   * Assets only — there is no `main`, and that is deliberate. The site is
+   * static files; a Worker script in front of them would be code running on
+   * every request in order to do nothing.
+   *
+   * `directory` is relative to this file, and Workers Builds runs with the
+   * root directory set to `site/`, so it resolves to site/dist.
+   */
+  "assets": {
+    "directory": "./dist",
+    // Astro emits /log/index.html rather than /log.html, and auto-trailing-slash
+    // is what maps a bare /log onto it.
+    "html_handling": "auto-trailing-slash",
+    // Serve the real 404 page rather than an empty Cloudflare error. Not
+    // "single-page-application" — this is a multi-page static site, and that
+    // setting would answer every dead URL with 200 and the homepage.
+    "not_found_handling": "404-page"
+  }
+}

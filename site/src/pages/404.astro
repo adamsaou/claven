@@ -1,0 +1,33 @@
+---
+import Base from '../layouts/Base.astro'
+---
+
+<Base title="Not found" description="That page does not exist.">
+  <div class="mx-auto max-w-5xl px-5 py-24">
+    <p class="text-ink-dim font-mono text-[13px]">404</p>
+    <h1 class="font-display text-ink mt-3 text-[34px] font-semibold tracking-[-0.02em]">
+      That page does not exist
+    </h1>
+    <p class="text-ink-muted mt-4 max-w-xl text-[15px]">
+      Either it moved, or it was never here. The site is small enough that
+      everything is one click from the top.
+    </p>
+    <div class="mt-8 flex flex-wrap gap-3">
+      <a
+        href="/"
+        class="border-line text-ink-muted hover:text-ink hover:border-ink-dim border px-4 py-2 text-[13px] transition-colors"
+        style="border-radius: var(--radius-xs); transition-duration: var(--dur-micro)">home</a
+      >
+      <a
+        href="/docs"
+        class="border-line text-ink-muted hover:text-ink hover:border-ink-dim border px-4 py-2 text-[13px] transition-colors"
+        style="border-radius: var(--radius-xs); transition-duration: var(--dur-micro)">docs</a
+      >
+      <a
+        href="/log"
+        class="border-line text-ink-muted hover:text-ink hover:border-ink-dim border px-4 py-2 text-[13px] transition-colors"
+        style="border-radius: var(--radius-xs); transition-duration: var(--dur-micro)">log</a
+      >
+    </div>
+  </div>
+</Base>
