@@ -1,0 +1,29 @@
+---
+/**
+ * The cleaved square. Geometry is canonical — brand/BRAND.md §1, and it matches
+ * brand/assets/claven-mark.svg path for path. Do not nudge the coordinates: the
+ * two cut edges are strictly parallel and stop being so the moment one moves.
+ *
+ * Below 20px the two-tone reads as noise, so `mono` switches to currentColor.
+ */
+interface Props {
+  size?: number
+  mono?: boolean
+  class?: string
+}
+const { size = 24, mono = false, class: className = '' } = Astro.props
+const left = mono ? 'currentColor' : '#F5F3EE'
+const right = mono ? 'currentColor' : '#FF5A2B'
+---
+
+<svg
+  width={size}
+  height={size}
+  viewBox="0 0 96 96"
+  fill="none"
+  aria-hidden="true"
+  class={className}
+>
+  <path d="M8 8 H62 L34 88 H8 Z" fill={left}></path>
+  <path d="M72 8 H88 V88 H44 Z" fill={right}></path>
+</svg>

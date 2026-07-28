@@ -1,0 +1,63 @@
+---
+import Base from '../../layouts/Base.astro'
+import { getCollection } from 'astro:content'
+
+const entries = (await getCollection('log', ({ data }) => !data.draft)).sort(
+  (a, b) => b.data.date.valueOf() - a.data.date.valueOf()
+)
+
+const formatter = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+  timeZone: 'UTC'
+})
+---
+
+<Base
+  title="Log"
+  description="Written notes from building Claven — decisions, mistakes, and what they cost."
+>
+  <div class="mx-auto max-w-5xl px-5 py-16">
+    <h1 class="font-display text-ink text-[34px] font-semibold tracking-[-0.02em]">Log</h1>
+    <p class="text-ink-muted mt-4 max-w-2xl text-[15px]">
+      Written, not filmed, and posted when a milestone is done rather than on a
+      schedule. Mostly decisions and what they cost. There is an <a
+        href="/log/rss.xml"
+        class="text-info">RSS feed</a
+      >.
+    </p>
+
+    <ol class="mt-12">
+      {
+        entries.map((entry) => (
+          <li class="border-line border-t py-8">
+            <a href={`/log/${entry.id}`} class="group block">
+              <div class="text-ink-dim flex items-center gap-3 font-mono text-[12px]">
+                <time datetime={entry.data.date.toISOString()}>
+                  {formatter.format(entry.data.date)}
+                </time>
+                {entry.data.milestone !== undefined && (
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <span>{entry.data.milestone}</span>
+                  </>
+                )}
+              </div>
+              <h2 class="font-display text-ink group-hover:text-ember mt-2 text-[26px] font-semibold transition-colors" style="transition-duration: var(--dur-micro)">
+                {entry.data.title}
+              </h2>
+              <p class="text-ink-muted mt-3 max-w-2xl text-[15px]">{entry.data.summary}</p>
+            </a>
+          </li>
+        ))
+      }
+    </ol>
+
+    {
+      entries.length === 0 && (
+        <p class="text-ink-dim border-line mt-12 border-t pt-8 text-[15px]">Nothing written yet.</p>
+      )
+    }
+  </div>
+</Base>

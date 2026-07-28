@@ -1,0 +1,150 @@
+---
+import Base from '../layouts/Base.astro'
+import Mark from '../components/Mark.astro'
+import Stat from '../components/Stat.astro'
+import CommitTicker from '../components/CommitTicker.astro'
+import { fetchCommitCount, REPO_URL } from '../lib/github'
+import { CURRENT } from '../lib/roadmap'
+import { getCollection } from 'astro:content'
+
+const commits = await fetchCommitCount()
+
+const entries = (await getCollection('log', ({ data }) => !data.draft)).sort(
+  (a, b) => b.data.date.valueOf() - a.data.date.valueOf()
+)
+const latest = entries[0]
+
+/** Only things that exist. Nothing here is aspirational — see `does not`, below. */
+const works = [
+  'Opens a folder, keeps a file tree, tabs, and restores the lot on restart',
+  'CodeMirror 6 with ten grammars, the Claven Dark theme, and find-in-file',
+  'Command palette and go-to-file, both fuzzy',
+  'Atomic saves that preserve encoding, byte-order marks and line endings',
+  'Refuses to overwrite a file that changed underneath you, and offers a way out',
+  'Renders right-to-left text correctly, per line',
+  'Deletes to the trash, never unlinks'
+]
+
+const doesNot = [
+  'Language servers — no completion, no diagnostics, no go-to-definition',
+  'A terminal',
+  'Project-wide search',
+  'Extensions, settings UI, or custom keybindings',
+  'Releases. There is nothing to download'
+]
+---
+
+<Base
+  title="Claven"
+  bare
+  description="A code editor, built in public. Open source, Apache-2.0, and not finished."
+>
+  <section class="mx-auto max-w-5xl px-5 pt-20 pb-16">
+    <Mark size={64} />
+
+    <h1 class="font-display text-ink mt-8 text-[46px] leading-[1.05] font-semibold tracking-[-0.025em] sm:text-[56px]">
+      A code editor,<br />built in public.
+    </h1>
+
+    <p class="text-ink-muted mt-6 max-w-xl text-[17px]">
+      Claven is an open-source editor I am building for myself, in the open, one
+      evening at a time. It is not finished, it has never been released, and
+      this page will say so until that changes.
+    </p>
+
+    <div class="mt-10 flex flex-wrap gap-3">
+      <a
+        href="/docs/getting-started"
+        class="border-ember text-ember hover:bg-ember hover:text-obsidian border px-4 py-2 text-[13px] font-medium transition-colors"
+        style="border-radius: var(--radius-xs); transition-duration: var(--dur-micro)"
+      >
+        build from source
+      </a>
+      <a
+        href="/log"
+        class="border-line text-ink-muted hover:text-ink hover:border-ink-dim border px-4 py-2 text-[13px] font-medium transition-colors"
+        style="border-radius: var(--radius-xs); transition-duration: var(--dur-micro)"
+      >
+        read the log
+      </a>
+    </div>
+
+    {/* The one live number on the site. Ember is spent on the logo and the
+        primary action already, so these stay ink. */}
+    <div class="mt-16 grid grid-cols-2 gap-y-8 sm:grid-cols-4">
+      <Stat value={commits.toLocaleString()} label="commits" live href={`${REPO_URL}/commits`} />
+      <Stat value={CURRENT.id} label="milestone" href="/roadmap" />
+      <Stat value="Apache-2.0" label="license" />
+      <Stat value="win · linux" label="tested on" />
+    </div>
+    <CommitTicker />
+  </section>
+
+  <section class="border-line mx-auto max-w-5xl border-t px-5 py-16">
+    <div class="grid gap-12 sm:grid-cols-2">
+      <div>
+        <h2 class="font-display text-ink text-[20px] font-semibold">What it does</h2>
+        <ul class="text-ink-muted mt-5 space-y-2.5 text-[15px]">
+          {
+            works.map((item) => (
+              <li class="flex gap-3">
+                <span class="text-ember shrink-0" aria-hidden="true">
+                  —
+                </span>
+                <span>{item}</span>
+              </li>
+            ))
+          }
+        </ul>
+      </div>
+
+      <div>
+        <h2 class="font-display text-ink text-[20px] font-semibold">What it does not</h2>
+        <ul class="text-ink-muted mt-5 space-y-2.5 text-[15px]">
+          {
+            doesNot.map((item) => (
+              <li class="flex gap-3">
+                <span class="text-ink-dim shrink-0" aria-hidden="true">
+                  —
+                </span>
+                <span>{item}</span>
+              </li>
+            ))
+          }
+        </ul>
+        <p class="text-ink-dim mt-6 text-[13px]">
+          This list is longer than the other one on purpose. It gets shorter at
+          the rate one person can make it shorter.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  {
+    latest !== undefined && (
+      <section class="border-line mx-auto max-w-5xl border-t px-5 py-16">
+        <h2 class="text-ink-dim text-[10px] font-medium uppercase" style="letter-spacing: 0.14em">
+          latest from the log
+        </h2>
+        <a href={`/log/${latest.id}`} class="group mt-5 block">
+          <h3 class="font-display text-ink group-hover:text-ember text-[26px] font-semibold transition-colors" style="transition-duration: var(--dur-micro)">
+            {latest.data.title}
+          </h3>
+          <p class="text-ink-muted mt-3 max-w-2xl text-[15px]">{latest.data.summary}</p>
+        </a>
+      </section>
+    )
+  }
+
+  <section class="border-line mx-auto max-w-5xl border-t px-5 py-16">
+    <h2 class="font-display text-ink text-[20px] font-semibold">Try it</h2>
+    <p class="text-ink-muted mt-3 max-w-xl text-[15px]">
+      There are no binaries. Two minutes and a Node install gets you a running
+      editor.
+    </p>
+    <pre class="border-line bg-surface-1 text-ink-muted mt-5 overflow-x-auto border p-4 font-mono text-[13.5px] leading-[1.65]" style="border-radius: var(--radius-md)"><code>git clone {REPO_URL}.git
+cd claven
+npm install
+npm run dev</code></pre>
+  </section>
+</Base>

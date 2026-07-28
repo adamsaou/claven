@@ -36,10 +36,10 @@ configs, TURN credentials and keys stay out, permanently.
 | Name | Claven. Coined, no meaning. Naming is **closed** — don't reopen it. |
 | Who it's for | **Me first.** Then semi-open-source and sold to developers. Dogfooding is the product strategy, not just a testing phase. |
 | License (current) | Apache-2.0. See the licensing note below before assuming this is permanent. |
-| Repo | Public from day one. Single repo, single package. |
+| Repo | Public from day one. Single repo, **two packages**: the app at the root and the site in `site/`. Amended 2026-07-27 — it was "single package". Deliberately *not* an npm workspace: `site/` has its own `package.json` and lockfile and is installed and built on its own, so the app's dependency tree is untouched. That was the point of the original rule; keeping the site's docs and devlog in the same commit as the code they describe is what it buys. |
 | Contributions | **No outside code without a CLA.** This is now load-bearing — see below. |
 | Shell | Electron. Cross-platform is a priority and Tauri means three engines, with the broken one (WebKitGTK) invisible from a Windows dev loop. Electron 43 drops 32-bit/armv7 on 2027-01-05; nothing here targets those. |
-| Devlog | Ship the milestone, *then* film. Never build for the thumbnail. No schedule commitments. |
+| Devlog | Ship the milestone, *then* film. Never build for the thumbnail. No schedule commitments. **Start point: M0**, the planning — closed 2026-07-27. The written log lives at `site/src/content/log/`; the video question is untouched by this. |
 | UI layer | React + TypeScript + Vite + Tailwind. Cheap and swappable, not worth debating. |
 | **Editor core** | **CodeMirror 6**, behind a single adapter module. Reasoning below. Closed 2026-07-26. |
 | Syntax | **Lezer**, via `@codemirror/lang-javascript` (TS/TSX), `lang-cpp`, `lang-java`. Supersedes the earlier "tree-sitter" row — with CM6 those grammars ship maintained, and bolting tree-sitter on top is 15+ hours for no visible difference. |
@@ -106,7 +106,7 @@ have. The rail being solved means I can stop thinking about it, not start using 
 |---|---|
 | **The product premise** | Four candidates (below). Decided at **M5**, by the annoyance log, not by argument. Pre-registered gut guess: **C**. See the contamination note. |
 | **License model** | Open core vs source-available. Answer before M5. |
-| **Devlog start point** | M0 (the planning) or M1 (something that runs). |
+| **Written devlog voice** | The M0 entry on the site is a draft written from this file and `ANNOYANCES.md`. It is in first person and it is not yet in your words. Rewrite before it counts as published. |
 
 ### Tripwire
 

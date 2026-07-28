@@ -1,0 +1,45 @@
+---
+import Mark from './Mark.astro'
+import { REPO_URL } from '../lib/github'
+
+const path = Astro.url.pathname
+const links = [
+  { href: '/docs', label: 'docs' },
+  { href: '/log', label: 'log' },
+  { href: '/roadmap', label: 'roadmap' }
+]
+---
+
+<header class="border-line bg-obsidian/90 sticky top-0 z-50 border-b backdrop-blur-sm">
+  <nav class="mx-auto flex h-14 max-w-5xl items-center gap-6 px-5">
+    <a href="/" class="flex items-center gap-2.5" aria-label="Claven, home">
+      <Mark size={20} />
+      {/* 13px is the wordmark minimum in the brand guide. */}
+      <span class="wordmark text-ink text-[13px]">Claven</span>
+    </a>
+
+    <div class="ms-auto flex items-center gap-5 text-[13px]">
+      {
+        links.map((link) => (
+          <a
+            href={link.href}
+            aria-current={path.startsWith(link.href) ? 'page' : undefined}
+            class:list={[
+              'transition-colors',
+              path.startsWith(link.href) ? 'text-ink' : 'text-ink-muted hover:text-ink'
+            ]}
+            style="transition-duration: var(--dur-micro)"
+          >
+            {link.label}
+          </a>
+        ))
+      }
+      <a
+        href={REPO_URL}
+        rel="noopener"
+        class="text-ink-muted hover:text-ink transition-colors"
+        style="transition-duration: var(--dur-micro)">github</a
+      >
+    </div>
+  </nav>
+</header>

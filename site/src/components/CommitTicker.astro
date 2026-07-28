@@ -1,0 +1,37 @@
+---
+import { REPO } from '../lib/github'
+---
+
+{/*
+  Corrects the built-in commit count in the browser, so the number is right
+  between deploys rather than right at deploy.
+
+  Inline and dependency-free: one fetch, no key, no backend. Unauthenticated
+  callers get 60 requests an hour per IP, which for this site is plenty and
+  fails safe anyway — if the request is refused, rate-limited or the visitor is
+  offline, the server-rendered number simply stays put. Nothing flickers and
+  nothing empties.
+*/}
+<script is:inline define:vars={{ repo: REPO }}>
+  const target = document.querySelector('[data-commit-count]')
+  if (target !== null) {
+    fetch(`https://api.github.com/repos/${repo}/commits?per_page=1`, {
+      headers: { accept: 'application/vnd.github+json' }
+    })
+      .then((response) => {
+        if (!response.ok) return null
+        const link = response.headers.get('link')
+        if (link === null) return 1
+        const last = /[?&]page=(\d+)>;\s*rel="last"/.exec(link)
+        return last === null ? null : Number.parseInt(last[1], 10)
+      })
+      .then((count) => {
+        if (typeof count === 'number' && Number.isFinite(count) && count > 0) {
+          target.textContent = count.toLocaleString()
+        }
+      })
+      .catch(() => {
+        /* Keep whatever the build put there. */
+      })
+  }
+</script>

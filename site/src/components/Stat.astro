@@ -1,0 +1,36 @@
+---
+/**
+ * One number and what it is. The commit count is the only live one; the rest
+ * are facts about the project that change when the project does.
+ *
+ * `live` marks the value for the script in CommitTicker, which corrects it in
+ * the browser. Everything renders server-side first, so the numbers are all
+ * present and correct with JavaScript switched off.
+ */
+interface Props {
+  value: string
+  label: string
+  live?: boolean
+  href?: string
+}
+const { value, label, live = false, href } = Astro.props
+const Tag = href === undefined ? 'div' : 'a'
+---
+
+<Tag
+  href={href}
+  class:list={[
+    'border-line flex flex-col gap-1 border-s ps-4',
+    href !== undefined && 'hover:border-ember transition-colors'
+  ]}
+  style="transition-duration: var(--dur-micro); transition-timing-function: var(--ease-brand)"
+>
+  <span
+    class="font-display text-ink text-[26px] leading-none font-semibold tabular-nums"
+    data-commit-count={live ? '' : undefined}>{value}</span
+  >
+  <span
+    class="text-ink-dim text-[10px] font-medium uppercase"
+    style="letter-spacing: 0.14em">{label}</span
+  >
+</Tag>

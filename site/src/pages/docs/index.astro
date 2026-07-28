@@ -1,0 +1,31 @@
+---
+import Base from '../../layouts/Base.astro'
+import { getCollection } from 'astro:content'
+
+const docs = (await getCollection('docs')).sort((a, b) => a.data.order - b.data.order)
+---
+
+<Base title="Docs" description="How to build Claven, what the keys do, and how it treats your files.">
+  <div class="mx-auto max-w-5xl px-5 py-16">
+    <h1 class="font-display text-ink text-[34px] font-semibold tracking-[-0.02em]">Docs</h1>
+    <p class="text-ink-muted mt-4 max-w-2xl text-[15px]">
+      Short, and only about things that exist. Anything describing behaviour
+      Claven does not have yet is a bug in this page.
+    </p>
+
+    <div class="mt-12 grid gap-px sm:grid-cols-2">
+      {
+        docs.map((doc) => (
+          <a
+            href={`/docs/${doc.id}`}
+            class="border-line hover:border-ember group border p-5 transition-colors"
+            style="border-radius: var(--radius-md); transition-duration: var(--dur-micro)"
+          >
+            <h2 class="font-display text-ink text-[20px] font-semibold">{doc.data.title}</h2>
+            <p class="text-ink-muted mt-2 text-[14px]">{doc.data.description}</p>
+          </a>
+        ))
+      }
+    </div>
+  </div>
+</Base>

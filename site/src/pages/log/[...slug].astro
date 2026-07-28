@@ -1,0 +1,50 @@
+---
+import Base from '../../layouts/Base.astro'
+import { getCollection, render } from 'astro:content'
+import type { GetStaticPaths } from 'astro'
+
+export const getStaticPaths = (async () => {
+  const entries = await getCollection('log', ({ data }) => !data.draft)
+  return entries.map((entry) => ({ params: { slug: entry.id }, props: { entry } }))
+}) satisfies GetStaticPaths
+
+const { entry } = Astro.props
+const { Content } = await render(entry)
+
+const formatter = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+  timeZone: 'UTC'
+})
+---
+
+<Base title={entry.data.title} description={entry.data.summary}>
+  <article class="mx-auto max-w-5xl px-5 py-16">
+    <div class="text-ink-dim flex items-center gap-3 font-mono text-[12px]">
+      <time datetime={entry.data.date.toISOString()}>{formatter.format(entry.data.date)}</time>
+      {
+        entry.data.milestone !== undefined && (
+          <>
+            <span aria-hidden="true">·</span>
+            <span>{entry.data.milestone}</span>
+          </>
+        )
+      }
+    </div>
+
+    <h1 class="font-display text-ink mt-3 max-w-3xl text-[34px] leading-[1.15] font-semibold tracking-[-0.02em]">
+      {entry.data.title}
+    </h1>
+
+    <div class="prose text-ink-muted mt-10 text-[16px]">
+      <Content />
+    </div>
+
+    <div class="border-line mt-16 border-t pt-8">
+      <a href="/log" class="text-ink-muted hover:text-ink text-[13px] transition-colors">
+        ← all entries
+      </a>
+    </div>
+  </article>
+</Base>
