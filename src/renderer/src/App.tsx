@@ -10,7 +10,7 @@ import { Icon, iconForPath } from './Icons'
 import type { DirEntry, LineEnding } from '../../shared/files'
 import type { IpcResult, LspState } from '../../shared/ipc'
 import { hasLanguageServer } from './editor/lsp'
-import { TerminalPanel } from './terminal/TerminalPanel'
+import { TerminalDock } from './terminal/TerminalDock'
 import { CodeMirrorEditor, languageForPath, type CursorPosition } from './editor/CodeMirrorEditor'
 import type { FileMeta } from '../../shared/files'
 
@@ -762,28 +762,7 @@ export default function App(): React.JSX.Element {
         {/* Kept mounted once opened and hidden with CSS rather than unmounted,
             so toggling the panel away does not kill a shell mid-command. */}
         {terminalStarted && (
-          <div
-            className="border-line bg-obsidian shrink-0 border-t"
-            style={{ height: terminalOpen ? '15rem' : 0, overflow: 'hidden' }}
-          >
-            <div
-              className="border-line text-ink-dim flex items-center justify-between border-b px-3 text-[10px] font-medium uppercase"
-              style={{ letterSpacing: '0.14em', height: 'var(--statusbar-h)' }}
-            >
-              <span>terminal</span>
-              <button
-                onClick={() => setTerminalOpen(false)}
-                aria-label="hide terminal"
-                className="hover:text-ink transition-colors"
-                style={{ transitionDuration: 'var(--dur-micro)' }}
-              >
-                ×
-              </button>
-            </div>
-            <div style={{ height: `calc(100% - var(--statusbar-h))` }}>
-              <TerminalPanel visible={terminalOpen} onExit={() => setTerminalOpen(false)} />
-            </div>
-          </div>
+          <TerminalDock open={terminalOpen} onClose={() => setTerminalOpen(false)} />
         )}
 
         <footer

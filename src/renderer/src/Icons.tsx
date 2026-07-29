@@ -25,7 +25,7 @@ import type { EditorLanguage } from './editor/CodeMirrorEditor'
 export type IconKey =
   | 'cpp' | 'header' | 'typescript' | 'tsx' | 'javascript' | 'python' | 'java'
   | 'rust' | 'json' | 'markdown' | 'html' | 'css' | 'text' | 'binary' | 'file'
-  | 'folder' | 'folderOpen' | 'explorer' | 'search' | 'run' | 'settings'
+  | 'folder' | 'folderOpen' | 'explorer' | 'search' | 'run' | 'settings' | 'terminal'
 
 const PATHS: Record<IconKey, React.JSX.Element> = {
   // Two increment crosses: ++. The widest, flattest silhouette in the set,
@@ -187,6 +187,14 @@ const PATHS: Record<IconKey, React.JSX.Element> = {
       <rect x="5" y="5" width="6" height="1" />
       <rect x="5" y="8" width="6" height="1" />
       <rect x="5" y="11" width="6" height="1" />
+    </>
+  ),
+  // A prompt: chevron and underscore. Flat geometry, no rounded joins, which
+  // is the same rule the mark itself follows.
+  terminal: (
+    <>
+      <path d="M3 4 L4.3 4 L8 7.5 L4.3 11 L3 11 L6.7 7.5 Z" />
+      <rect x="8.5" y="10" width="4.5" height="1" />
     </>
   ),
   search: (

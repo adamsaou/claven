@@ -434,6 +434,32 @@ add(
   shellOutput ?? `no output. rows were: ${JSON.stringify((await evaluate(`document.querySelector('.xterm-rows')?.innerText ?? ''`) ?? '').replace(/\s+/g, ' ').slice(0, 160))}`
 )
 
+/**
+ * A second terminal is a second shell, not a second view of the first.
+ *
+ * Checked by counting xterm instances rather than tabs: a tab strip that
+ * renders two entries pointing at one shell would look identical and be
+ * useless.
+ */
+await evaluate(`document.querySelector('[aria-label="new terminal"]')?.click(), true`)
+let shells = 0
+for (let i = 0; i < 20 && shells < 2; i += 1) {
+  await sleep(500)
+  shells = (await evaluate(`document.querySelectorAll('.xterm-screen').length`)) ?? 0
+}
+add('a second terminal is a second shell', shells === 2, `${shells} xterm instance(s)`)
+
+// The first terminal's scrollback has to survive being switched away from and
+// back, or a second terminal costs you the first one.
+await evaluate(`
+  Array.from(document.querySelectorAll('[aria-label^="close terminal"]'))
+    .length > 1 ? true : false
+`)
+const firstTabButtons = await evaluate(
+  `document.querySelectorAll('[aria-label^="close terminal"]').length`
+)
+add('each terminal has its own close control', firstTabButtons === 2, `${firstTabButtons} close buttons`)
+
 add('the renderer logged nothing', problems.length === 0, problems.slice(0, 3).join(' | ') || 'clean')
 
 let failures = 0

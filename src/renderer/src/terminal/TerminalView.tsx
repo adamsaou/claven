@@ -43,7 +43,7 @@ type Props = {
   onExit: () => void
 }
 
-export function TerminalPanel({ visible, onExit }: Props): React.JSX.Element {
+export function TerminalView({ visible, onExit }: Props): React.JSX.Element {
   const host = useRef<HTMLDivElement>(null)
   const term = useRef<Terminal | null>(null)
   const fit = useRef<FitAddon | null>(null)
