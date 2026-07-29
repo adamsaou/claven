@@ -254,6 +254,43 @@ export default function App(): React.JSX.Element {
     setNotice({ kind: 'info', text: 'reloaded from disk' })
   }, [])
 
+  /**
+   * A file open in the editor changed outside it.
+   *
+   * A clean tab reloads without asking, because there is nothing of yours to
+   * lose and silently showing you stale content is the worse option. A dirty
+   * tab is left exactly as it is and only flagged: choosing between your edits
+   * and theirs is a decision, and the save path already has a dialog for it.
+   */
+  useEffect(
+    () =>
+      window.claven.subscribe('file:changed-on-disk', (payload) => {
+        setTabs((current) => {
+          const tab = current.find((candidate) => candidate.path === payload.path)
+          if (tab === undefined) return current
+          if (tab.content !== tab.saved) {
+            setNotice({ kind: 'error', text: `${tab.name} changed on disk — your copy differs` })
+            return current
+          }
+          void (async () => {
+            const result = await window.claven.invoke('fs:read', { path: payload.path })
+            if (!result.ok || result.value.kind !== 'text') return
+            const { content, meta } = result.value
+            setTabs((latest) =>
+              latest.map((candidate) =>
+                candidate.path === payload.path
+                  ? { ...candidate, content, saved: content, meta }
+                  : candidate
+              )
+            )
+            setNotice({ kind: 'info', text: `${tab.name} reloaded from disk` })
+          })()
+          return current
+        })
+      }),
+    []
+  )
+
   const save = useCallback(async () => {
     if (!active || active.content === active.saved) return
     const started = performance.now()
@@ -375,6 +412,23 @@ export default function App(): React.JSX.Element {
     },
     [tabs, forceCloseTab]
   )
+
+  /**
+   * Tell main which files to watch, and what we believe is on disk.
+   *
+   * Keyed on the paths and their mtimes rather than on `tabs`, because the tab
+   * array changes identity on every keystroke and this would otherwise reset
+   * every watcher in the process several times a second. `meta.mtimeMs` only
+   * moves on a read or a write, which is exactly when the baseline should.
+   */
+  const watchKey = JSON.stringify(tabs.map((tab) => [tab.path, tab.meta.mtimeMs]))
+  useEffect(() => {
+    void window.claven.invoke('watch:files', {
+      files: tabs.map((tab) => ({ path: tab.path, mtimeMs: tab.meta.mtimeMs }))
+    })
+    // tabs is read through watchKey on purpose; see above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watchKey])
 
   // Main cannot see React state, and a renderer cannot veto its own window
   // closing — so the count has to be pushed for the close guard to work.

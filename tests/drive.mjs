@@ -40,6 +40,14 @@ const userData = await mkdtemp(join(tmpdir(), 'claven-drive-ud-'))
 const a = join(workspace, 'a.txt')
 const b = join(workspace, 'b.txt')
 const ts = join(workspace, 'typed.ts')
+/**
+ * Owned by the watcher check alone.
+ *
+ * Sharing a file with the editing checks meant it arrived dirty, the silent
+ * reload was correctly refused, and that read as the watcher being broken when
+ * it was working exactly as designed.
+ */
+const watched = join(workspace, 'watched.txt')
 const lines = (word) => Array.from({ length: 8 }, (_, i) => `${word} line ${i}`).join('\n') + '\n'
 await writeFile(a, lines('alpha'))
 await writeFile(b, lines('bravo'))
@@ -53,12 +61,17 @@ await writeFile(
 // Valid on disk. The error is typed in later, and never saved — which is the
 // whole point of the check.
 await writeFile(ts, 'export const count: number = 1\n')
+await writeFile(watched, 'untouched\n')
 
 // Seeded rather than clicked: opening a folder means a native dialog, and CDP
 // cannot reach one.
 await writeFile(
   join(userData, 'session.json'),
-  JSON.stringify({ root: workspace, openPaths: [a, b, ts], activePath: a, cursors: {} }, null, 2)
+  JSON.stringify(
+    { root: workspace, openPaths: [a, b, ts, watched], activePath: a, cursors: {} },
+    null,
+    2
+  )
 )
 
 const child = spawn(
@@ -170,7 +183,11 @@ const clickTab = (name) =>
 const tabs = await evaluate(
   `Array.from(document.querySelectorAll('main .max-w-48')).map((n) => n.textContent).join(',')`
 )
-add('the session restores every tab', tabs === 'a.txt,b.txt,typed.ts', `tabs = ${tabs}`)
+add(
+  'the session restores every tab',
+  tabs === 'a.txt,b.txt,typed.ts,watched.txt',
+  `tabs = ${tabs}`
+)
 
 await focusEditor()
 await send('Input.insertText', { text: 'TYPED-' })
@@ -530,6 +547,50 @@ const firstTabButtons = await evaluate(
   `document.querySelectorAll('[aria-label^="close terminal"]').length`
 )
 add('each terminal has its own close control', firstTabButtons === 2, `${firstTabButtons} close buttons`)
+
+/**
+ * An external change to an open file.
+ *
+ * a.txt has been edited in the buffer by earlier checks, so b.txt is used: it
+ * needs to be clean for the silent reload to be the correct behaviour.
+ *
+ * Written from this process, which is genuinely outside the editor, so this
+ * exercises the real path rather than a simulated event.
+ */
+await clickTab('watched.txt')
+await sleep(500)
+await writeFile(watched, 'CHANGED BY SOMETHING ELSE\n')
+let reloaded = null
+for (let i = 0; i < 20 && reloaded === null; i += 1) {
+  await sleep(500)
+  const shown = await text()
+  if (typeof shown === 'string' && shown.startsWith('CHANGED BY SOMETHING ELSE')) {
+    reloaded = shown.slice(0, 30)
+  }
+}
+add(
+  'an external change reloads a clean file',
+  reloaded !== null,
+  reloaded ?? `still showing ${JSON.stringify((await text() ?? '').slice(0, 30))}`
+)
+
+/**
+ * And the case that makes a watcher worth having rather than annoying: the
+ * editor's own save must not look like an external change. If it did, every
+ * ctrl+s would announce that the file had changed underneath you.
+ */
+await focusEditor()
+await send('Input.insertText', { text: 'mine ' })
+await sleep(300)
+await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', modifiers: 2, key: 's', code: 'KeyS', windowsVirtualKeyCode: 83 })
+await send('Input.dispatchKeyEvent', { type: 'keyUp', modifiers: 2, key: 's', code: 'KeyS', windowsVirtualKeyCode: 83 })
+await sleep(3000)
+const afterSave = await evaluate(`document.querySelector('footer .ms-auto')?.textContent ?? ''`)
+add(
+  'the editor own save is not reported as an external change',
+  !/changed on disk/.test(afterSave),
+  JSON.stringify(afterSave.trim().slice(0, 50))
+)
 
 add('the renderer logged nothing', problems.length === 0, problems.slice(0, 3).join(' | ') || 'clean')
 

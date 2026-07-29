@@ -7,6 +7,7 @@ import { readTextFile, writeTextFile } from './textfile'
 import { loadSession, saveSession } from './session'
 import { sendToLanguageServer, startLanguageServer, stopLanguageServer } from './lsp'
 import { killPty, resizePty, startPty, writePty } from './pty'
+import { setWatchedFiles } from './watcher'
 import type { DirEntry } from '../shared/files'
 
 /** Directories never worth walking or listing. */
@@ -240,6 +241,11 @@ export function registerHandlers(): void {
 
   handle('pty:kill', (request) => {
     killPty(request.id)
+    return {}
+  })
+
+  handle('watch:files', (request) => {
+    setWatchedFiles(request.files)
     return {}
   })
 

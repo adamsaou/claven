@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { registerHandlers, getDirtyCount } from './handlers'
 import { stopLanguageServer } from './lsp'
 import { killAllPtys } from './pty'
+import { stopWatching } from './watcher'
 
 const isDev = !app.isPackaged
 
@@ -172,11 +173,13 @@ if (!isSmokeRun && !app.requestSingleInstanceLock()) {
   app.on('before-quit', () => {
     stopLanguageServer()
     killAllPtys()
+    stopWatching()
   })
 
   app.on('window-all-closed', () => {
     stopLanguageServer()
     killAllPtys()
+    stopWatching()
     // macOS convention is to stay alive with no windows; everywhere else quits.
     if (process.platform !== 'darwin') app.quit()
   })

@@ -196,6 +196,19 @@ export type IpcContract = {
     request: { id: string }
     response: Record<string, never>
   }
+
+  /**
+   * Which files to watch for changes made outside the editor, and the mtime the
+   * renderer believes each one currently has.
+   *
+   * The baseline comes from the renderer rather than being taken in main,
+   * because main would otherwise have to distinguish its own writes from
+   * everyone else's and every save would look like an external change.
+   */
+  'watch:files': {
+    request: { files: Array<{ path: string; mtimeMs: number }> }
+    response: Record<string, never>
+  }
 }
 
 /** Where the language server is in its lifecycle. */
@@ -253,7 +266,8 @@ export const IPC_CHANNELS = [
   'pty:start',
   'pty:write',
   'pty:resize',
-  'pty:kill'
+  'pty:kill',
+  'watch:files'
 ] as const
 
 /**
