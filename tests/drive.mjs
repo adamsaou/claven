@@ -211,6 +211,77 @@ const undone = await text()
 add('undo survives a tab switch', !undone.startsWith('TYPED-'), undone.slice(0, 24))
 
 /**
+ * Two editing gestures that were silently absent.
+ *
+ * `allowMultipleSelections` defaults to false, so ctrl+d was bound to "select
+ * next occurrence" and could not physically produce a second one. Neither
+ * failure showed up as an error, which is why both are pinned here.
+ */
+await clickTab('b.txt')
+await sleep(300)
+await focusEditor()
+/**
+ * Two things this check got wrong before it got them right, both of them
+ * correct behaviour being mistaken for a bug.
+ *
+ * `Input.insertText` looks like a paste, and auto-closing deliberately does
+ * not fire on paste. So the bracket is typed as a key event.
+ *
+ * And auto-closing only fires when the next character is whitespace, the end
+ * of the line, or a closing bracket. Typing `(` directly in front of a word
+ * correctly inserts just the one character, which is what VS Code does too.
+ * Hence the jump to the end of the document first.
+ */
+await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', modifiers: 2, key: 'End', code: 'End', windowsVirtualKeyCode: 35 })
+await send('Input.dispatchKeyEvent', { type: 'keyUp', modifiers: 2, key: 'End', code: 'End', windowsVirtualKeyCode: 35 })
+await sleep(200)
+await send('Input.dispatchKeyEvent', {
+  type: 'keyDown',
+  key: '(',
+  code: 'Digit9',
+  text: '(',
+  unmodifiedText: '9',
+  modifiers: 8, // shift
+  windowsVirtualKeyCode: 57
+})
+await send('Input.dispatchKeyEvent', { type: 'keyUp', key: '(', code: 'Digit9', modifiers: 8, windowsVirtualKeyCode: 57 })
+await sleep(400)
+const bracketed = await text()
+add(
+  'brackets close themselves',
+  bracketed.endsWith('()'),
+  JSON.stringify(bracketed.slice(-12))
+)
+
+// Select the first "bravo", then ctrl+d to add the next occurrence as a
+// second selection range.
+await evaluate(`
+  (() => {
+    const line = document.querySelector('.cm-content')
+    const range = document.createRange()
+    const node = document.createTreeWalker(line, NodeFilter.SHOW_TEXT).nextNode()
+    return true
+  })()
+`)
+await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', modifiers: 2, key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65 })
+await send('Input.dispatchKeyEvent', { type: 'keyUp', modifiers: 2, key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65 })
+await send('Input.insertText', { text: 'dup\ndup\ndup\n' })
+await sleep(300)
+// Put the cursor on the first "dup", select the word, then ctrl+d twice.
+await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', modifiers: 2, key: 'Home', code: 'Home', windowsVirtualKeyCode: 36 })
+await send('Input.dispatchKeyEvent', { type: 'keyUp', modifiers: 2, key: 'Home', code: 'Home', windowsVirtualKeyCode: 36 })
+for (let i = 0; i < 3; i += 1) {
+  await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', modifiers: 2, key: 'd', code: 'KeyD', windowsVirtualKeyCode: 68 })
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', modifiers: 2, key: 'd', code: 'KeyD', windowsVirtualKeyCode: 68 })
+  await sleep(200)
+}
+const cursors = await evaluate(`document.querySelectorAll('.cm-cursor').length`)
+add('multiple cursors are possible', (cursors ?? 0) >= 2, `${cursors} cursors drawn`)
+
+await clickTab('typed.ts')
+await sleep(300)
+
+/**
  * M3's definition of done, in one check: a TypeScript error squiggles without
  * saving.
  *

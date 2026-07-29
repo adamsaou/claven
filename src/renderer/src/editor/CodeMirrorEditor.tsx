@@ -1,9 +1,27 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 import { EditorState, type Extension } from '@codemirror/state'
-import { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection } from '@codemirror/view'
+import {
+  EditorView,
+  keymap,
+  lineNumbers,
+  highlightActiveLine,
+  highlightActiveLineGutter,
+  highlightSpecialChars,
+  drawSelection,
+  dropCursor,
+  rectangularSelection,
+  crosshairCursor
+} from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search'
-import { bracketMatching, foldGutter, indentOnInput, syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
+import {
+  autocompletion,
+  closeBrackets,
+  closeBracketsKeymap,
+  completionKeymap
+} from '@codemirror/autocomplete'
+import { bracketMatching, foldGutter, foldKeymap, indentOnInput, syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
+import { lintKeymap } from '@codemirror/lint'
 import { javascript } from '@codemirror/lang-javascript'
 import { cpp } from '@codemirror/lang-cpp'
 import { java } from '@codemirror/lang-java'
@@ -152,11 +170,34 @@ export function CodeMirrorEditor({
         doc,
         extensions: [
           lineNumbers(),
+          highlightActiveLineGutter(),
+          // Renders control characters and zero-width spaces as a visible
+          // placeholder. They are invisible otherwise, and an invisible
+          // character in a string is a genuinely horrible bug to chase.
+          highlightSpecialChars(),
           foldGutter(),
           history(),
           drawSelection(),
+          dropCursor(),
+          /**
+           * Multi-cursor. This was simply off: `allowMultipleSelections`
+           * defaults to false, so ctrl+d was bound to "select next occurrence"
+           * and could not physically do it, and alt+click placed one cursor.
+           * Two of the most-used editing gestures there are, quietly absent.
+           */
+          EditorState.allowMultipleSelections.of(true),
+          rectangularSelection(),
+          crosshairCursor(),
           indentOnInput(),
           bracketMatching(),
+          // Typing ( gives you ), and typing " around a selection wraps it.
+          closeBrackets(),
+          /**
+           * Base completion, which is separate from the language server's.
+           * Without it the only files that complete anything are TypeScript
+           * ones, so markdown, CSS and python get nothing at all.
+           */
+          autocompletion(),
           highlightActiveLine(),
           highlightSelectionMatches(),
           // Fallback only — clavenDark's HighlightStyle takes precedence for any
@@ -177,9 +218,15 @@ export function CodeMirrorEditor({
                 return true
               }
             },
+            // closeBrackets first: it has to see the closing character you
+            // typed before the default keymap treats it as plain input.
+            ...closeBracketsKeymap,
             ...defaultKeymap,
             ...historyKeymap,
             ...searchKeymap,
+            ...foldKeymap,
+            ...completionKeymap,
+            ...lintKeymap,
             indentWithTab
           ]),
           EditorView.updateListener.of((update) => {
