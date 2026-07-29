@@ -24,6 +24,11 @@ command.
 **Voice.** Direct and short. No marketing register, no over-polished AI prose.
 Docs and commit messages should sound like a person wrote them.
 
+**No em dashes.** Anywhere: docs, site copy, the log, commit messages, code
+comments. Use a full stop, a comma, a colon or brackets instead. Two of them in
+a paragraph is the clearest tell that a machine wrote it, and this project is
+public and written in my name.
+
 **The devlog is drafted in conversation, never written straight to the site.**
 Settled 2026-07-29. An assistant produces the draft in chat, I rewrite it, and
 only then does it land in `site/src/content/log/`. Docs, roadmap and chrome can
