@@ -29,7 +29,19 @@ import type { EditorLanguage } from './CodeMirrorEditor'
  */
 export function pathToUri(path: string): string {
   const normalised = path.replace(/\\/g, '/')
-  const withRoot = /^[a-zA-Z]:/.test(normalised) ? `/${normalised}` : normalised
+  /**
+   * Lower-case the drive letter. This one line is load-bearing.
+   *
+   * TypeScript hands back locations as `file:///c%3A/...`, lower-case, and
+   * @codemirror/lsp-client decides whether a definition is in the current file
+   * by comparing URI strings exactly. Send `C%3A` and that comparison fails
+   * against the server's `c%3A`, so a same-file jump is treated as a jump into
+   * some other document, the workspace is asked for a file it has never heard
+   * of, and the whole thing returns quietly having done nothing. Go-to-
+   * definition simply did not work, with no error anywhere.
+   */
+  const cased = normalised.replace(/^([a-zA-Z]):/, (_all, letter: string) => `${letter.toLowerCase()}:`)
+  const withRoot = /^[a-zA-Z]:/.test(cased) ? `/${cased}` : cased
   return `file://${withRoot.split('/').map(encodeURIComponent).join('/')}`
 }
 

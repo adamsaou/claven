@@ -247,6 +247,130 @@ add(
   squiggle === null ? 'no diagnostic after 40s' : `underlined ${JSON.stringify(squiggle)}`
 )
 
+/**
+ * The rest of what the language server connection is supposed to provide.
+ *
+ * These shipped bundled with the connection and were published as working
+ * before anyone had driven them. Checking them turned that from a claim into
+ * a fact, which is the only reason this section exists.
+ */
+
+/** Screen position of a piece of text in the editor, for mouse events. */
+const locate = (text, occurrence = 0) =>
+  evaluate(`
+    (() => {
+      const root = document.querySelector('.cm-content')
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+      let node, seen = 0
+      while ((node = walker.nextNode())) {
+        const index = node.textContent.indexOf(${JSON.stringify(text)})
+        if (index === -1) continue
+        if (seen++ < ${occurrence}) continue
+        const range = document.createRange()
+        range.setStart(node, index)
+        range.setEnd(node, index + ${text.length})
+        const box = range.getBoundingClientRect()
+        return { x: Math.round(box.left + box.width / 2), y: Math.round(box.top + box.height / 2) }
+      }
+      return null
+    })()
+  `)
+
+// A program with a definition and a use of it, so there is something to hover
+// over and somewhere to jump to.
+await focusEditor()
+await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', modifiers: 2, key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65 })
+await send('Input.dispatchKeyEvent', { type: 'keyUp', modifiers: 2, key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65 })
+await send('Input.insertText', {
+  text: 'export function greet(person: string): string {\n  return "hello " + person\n}\n\nconst message = greet("world")\n'
+})
+// The server has to reparse before any of this means anything.
+await sleep(3500)
+
+// ---- hover -------------------------------------------------------------
+const hoverSpot = await locate('greet', 1)
+let hoverText = null
+if (hoverSpot !== null) {
+  for (let i = 0; i < 12 && hoverText === null; i += 1) {
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: hoverSpot.x, y: hoverSpot.y })
+    await sleep(700)
+    const found = await evaluate(`document.querySelector('.cm-tooltip-hover')?.textContent ?? null`)
+    if (typeof found === 'string' && found.trim().length > 0) hoverText = found.trim()
+  }
+}
+add(
+  'hover reports a type',
+  hoverText !== null && /greet|string/.test(hoverText),
+  hoverText === null ? 'no tooltip appeared' : hoverText.slice(0, 70)
+)
+
+// ---- go to definition --------------------------------------------------
+// Click the *use* of greet on the last line, then F12 should land on the
+// definition up on line 1.
+// Get the hover tooltip out of the way first. It is sitting directly over the
+// text we are about to click, and it swallowed the click on the first attempt,
+// which then read as "go to definition is broken".
+await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5 })
+await sleep(800)
+
+const usageSpot = await locate('greet', 1)
+let clickedAt = ''
+let keyArrived = false
+let definitionLine = null
+if (usageSpot !== null) {
+  await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: usageSpot.x, y: usageSpot.y, button: 'left', clickCount: 1 })
+  await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: usageSpot.x, y: usageSpot.y, button: 'left', clickCount: 1 })
+  await sleep(500)
+  clickedAt = (await evaluate(`document.querySelector('footer .tabular-nums')?.textContent ?? ''`)).trim()
+
+  // Watch for the key arriving, so a failure distinguishes "the binding did
+  // not fire" from "the jump did not happen".
+  await evaluate(`
+    window.__f12 = false
+    document.addEventListener('keydown', (e) => { if (e.key === 'F12') window.__f12 = true }, true)
+    true
+  `)
+  await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'F12', code: 'F12', windowsVirtualKeyCode: 123, nativeVirtualKeyCode: 123 })
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'F12', code: 'F12', windowsVirtualKeyCode: 123, nativeVirtualKeyCode: 123 })
+  await sleep(300)
+  keyArrived = await evaluate(`window.__f12 === true`)
+  for (let i = 0; i < 12 && definitionLine === null; i += 1) {
+    await sleep(600)
+    const now = (await evaluate(`document.querySelector('footer .tabular-nums')?.textContent ?? ''`)).trim()
+    if (now !== clickedAt) definitionLine = now
+  }
+}
+// Asserted separately so a failure says which half broke: the click that puts
+// the cursor on the symbol, or the jump itself.
+add('clicking puts the cursor on the use of greet', /ln 5,/.test(clickedAt), clickedAt || 'no reading')
+add(
+  'go to definition moves the cursor',
+  definitionLine !== null && /ln 1,/.test(definitionLine),
+  definitionLine === null
+    ? `cursor stayed at ${clickedAt || 'unknown'} (F12 reached the page: ${keyArrived})`
+    : definitionLine
+)
+
+// ---- completion --------------------------------------------------------
+await focusEditor()
+await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', modifiers: 2, key: 'End', code: 'End', windowsVirtualKeyCode: 35 })
+await send('Input.dispatchKeyEvent', { type: 'keyUp', modifiers: 2, key: 'End', code: 'End', windowsVirtualKeyCode: 35 })
+await sleep(300)
+await send('Input.insertText', { text: '\ngre' })
+let completion = null
+for (let i = 0; i < 15 && completion === null; i += 1) {
+  await sleep(700)
+  const found = await evaluate(
+    `document.querySelector('.cm-tooltip-autocomplete')?.textContent ?? null`
+  )
+  if (typeof found === 'string' && found.includes('greet')) completion = found.trim()
+}
+add(
+  'completion offers a symbol from the project',
+  completion !== null,
+  completion === null ? 'no autocomplete containing "greet"' : completion.slice(0, 60)
+)
+
 add('the renderer logged nothing', problems.length === 0, problems.slice(0, 3).join(' | ') || 'clean')
 
 let failures = 0

@@ -34,13 +34,13 @@ export const MILESTONES: Milestone[] = [
     title: 'Language servers',
     detail: 'Spawn servers, JSON-RPC framing, diagnostics, completion, hover, go-to-definition.',
     doneWhen: 'A TypeScript error squiggles without saving.',
-    status: 'current'
+    status: 'done'
   },
   {
     id: 'M4',
     title: 'Terminal',
     detail: 'A real PTY, and xterm.js in front of it.',
-    status: 'planned'
+    status: 'current'
   },
   {
     id: 'M5',
