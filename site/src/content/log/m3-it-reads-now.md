@@ -46,3 +46,29 @@ connection. They should work. I haven't driven them, so they're claims.
 
 Next language is cheap: install a server, add a line for its file extensions.
 The pipe is the part that took the week.
+
+## Later the same day
+
+I went back to check the three I had called claims. Two of them worked.
+Hover returns a real signature. Completion offers things from the project.
+
+Go to definition did nothing at all.
+
+The bug was mine. TypeScript reports where things are defined using a lower
+case drive letter, `file:///c%3A/...`. I was sending `C%3A`. The client library
+works out whether a definition is in the file you already have open by
+comparing those two strings exactly, so mine never matched. A jump inside one
+file got treated as a jump into a different one, it went looking for a document
+nothing had heard of, and returned without doing anything.
+
+No error. No log line. A key that did nothing.
+
+One capital letter. And there is a comment in that function, written by me,
+saying this is exactly where Windows integrations go wrong.
+
+The test that caught it was nearly useless. All it said was "cursor never
+moved". Asking the server for a definition directly and reading the URI it
+handed back showed the problem in one line. Worth remembering which of those
+two is the better first move.
+
+All four work now.
