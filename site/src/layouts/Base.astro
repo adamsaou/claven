@@ -11,7 +11,14 @@ interface Props {
 }
 const { title, description, bare = false } = Astro.props
 const fullTitle = bare ? title : `${title} — Claven`
-const canonical = new URL(Astro.url.pathname, Astro.site ?? 'https://claven.dev')
+const site = Astro.site ?? 'https://claven.dev'
+const canonical = new URL(Astro.url.pathname, site)
+/**
+ * The share card. Absolute, because og:image is one of the few places a
+ * relative URL is simply ignored — the page would preview as bare text and
+ * nothing would say why. Regenerate with `npm run og` from the repo root.
+ */
+const shareCard = new URL('/og.png', site)
 ---
 
 <!doctype html>
@@ -22,7 +29,12 @@ const canonical = new URL(Astro.url.pathname, Astro.site ?? 'https://claven.dev'
     <title>{fullTitle}</title>
     <meta name="description" content={description} />
     <link rel="canonical" href={canonical.href} />
+    {/* SVG first — browsers that understand it prefer it, and it stays sharp
+        at every size and adapts better than a bitmap. The PNG is the fallback
+        for those that do not. */}
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
     <meta name="theme-color" content="#0F1115" />
 
     <meta property="og:type" content="website" />
@@ -30,7 +42,18 @@ const canonical = new URL(Astro.url.pathname, Astro.site ?? 'https://claven.dev'
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical.href} />
     <meta property="og:site_name" content="Claven" />
-    <meta name="twitter:card" content="summary" />
+    {/* Width and height are not decoration: without them a card often renders
+        as a thumbnail on first fetch, before the crawler has measured the
+        file. */}
+    <meta property="og:image" content={shareCard.href} />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Claven — a code editor, built in public." />
+    {/* summary_large_image, not summary: with an image this size, `summary`
+        crops it to a small square and loses the wordmark. */}
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content={shareCard.href} />
 
     <link rel="alternate" type="application/rss+xml" title="Claven log" href="/log/rss.xml" />
   </head>

@@ -19,7 +19,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json --composite false && tsc --noEmit -p tsconfig.web.json --composite false",
     "lint": "node tests/check-boundaries.mjs",
     "fixtures": "node tests/generate-fixtures.mjs",
-    "icons": "node scripts/generate-icons.mjs"
+    "icons": "node scripts/generate-icons.mjs",
+    "og": "electron scripts/generate-og.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.4",
