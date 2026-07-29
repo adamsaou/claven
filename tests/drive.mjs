@@ -39,14 +39,26 @@ const userData = await mkdtemp(join(tmpdir(), 'claven-drive-ud-'))
 
 const a = join(workspace, 'a.txt')
 const b = join(workspace, 'b.txt')
+const ts = join(workspace, 'typed.ts')
 const lines = (word) => Array.from({ length: 8 }, (_, i) => `${word} line ${i}`).join('\n') + '\n'
 await writeFile(a, lines('alpha'))
 await writeFile(b, lines('bravo'))
+
+// A real project for the language server to reason about. It needs a tsconfig
+// to treat the file as part of anything.
+await writeFile(
+  join(workspace, 'tsconfig.json'),
+  JSON.stringify({ compilerOptions: { strict: true, target: 'esnext', module: 'esnext' } }, null, 2)
+)
+// Valid on disk. The error is typed in later, and never saved — which is the
+// whole point of the check.
+await writeFile(ts, 'export const count: number = 1\n')
+
 // Seeded rather than clicked: opening a folder means a native dialog, and CDP
 // cannot reach one.
 await writeFile(
   join(userData, 'session.json'),
-  JSON.stringify({ root: workspace, openPaths: [a, b], activePath: a, cursors: {} }, null, 2)
+  JSON.stringify({ root: workspace, openPaths: [a, b, ts], activePath: a, cursors: {} }, null, 2)
 )
 
 const child = spawn(
@@ -95,11 +107,28 @@ socket.addEventListener('message', (event) => {
     return
   }
   if (message.method === 'Runtime.exceptionThrown') {
-    problems.push(message.params.exceptionDetails.exception?.description ?? 'exception')
+    report(message.params.exceptionDetails.exception?.description ?? 'exception')
   } else if (message.method === 'Runtime.consoleAPICalled' && message.params.type === 'error') {
-    problems.push(message.params.args.map((arg) => arg.value ?? arg.description).join(' '))
+    report(message.params.args.map((arg) => arg.value ?? arg.description).join(' '))
   }
 })
+
+/**
+ * Electron's own sandbox bootstrap, not Claven's code.
+ *
+ * Attaching a debugger creates an extra renderer, and its internal bundle
+ * intermittently fails to read startup data before the real window has
+ * finished initialising. It appears on roughly half of runs, in a file nobody
+ * here wrote, and never with any user-visible effect.
+ *
+ * Matched narrowly on purpose: the check exists to catch the application
+ * logging errors, and a broad filter would eventually swallow one of those.
+ */
+const ELECTRON_INTERNAL = /sandboxed_renderer\.bundle\.js|preloadScripts.*binding\.startupData/
+
+function report(text) {
+  if (!ELECTRON_INTERNAL.test(text)) problems.push(text)
+}
 
 const send = (method, params = {}) =>
   new Promise((resolve) => {
@@ -141,7 +170,7 @@ const clickTab = (name) =>
 const tabs = await evaluate(
   `Array.from(document.querySelectorAll('main .max-w-48')).map((n) => n.textContent).join(',')`
 )
-add('the session restores both tabs', tabs === 'a.txt,b.txt', `tabs = ${tabs}`)
+add('the session restores every tab', tabs === 'a.txt,b.txt,typed.ts', `tabs = ${tabs}`)
 
 await focusEditor()
 await send('Input.insertText', { text: 'TYPED-' })
@@ -180,6 +209,43 @@ for (const type of ['rawKeyDown', 'keyUp']) {
 await sleep(300)
 const undone = await text()
 add('undo survives a tab switch', !undone.startsWith('TYPED-'), undone.slice(0, 24))
+
+/**
+ * M3's definition of done, in one check: a TypeScript error squiggles without
+ * saving.
+ *
+ * Everything about it is deliberate. The file is valid on disk and the error is
+ * typed into the buffer, so a pass cannot be explained by the server having
+ * read the file. And it waits for the squiggle to appear rather than sleeping a
+ * fixed time, because a cold TypeScript program can take a few seconds and a
+ * fixed sleep would either be flaky or slow.
+ */
+await clickTab('typed.ts')
+await sleep(600)
+await focusEditor()
+// Select all, then replace the whole file with a version the compiler cannot
+// accept: a string assigned to a `number`.
+await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', modifiers: 2, key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65 })
+await send('Input.dispatchKeyEvent', { type: 'keyUp', modifiers: 2, key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65 })
+await send('Input.insertText', { text: "export const count: number = 'not a number'\n" })
+
+let squiggle = null
+for (let i = 0; i < 40 && squiggle === null; i += 1) {
+  await sleep(1000)
+  const found = await evaluate(`
+    (() => {
+      const mark = document.querySelector('.cm-lintRange-error')
+      if (mark === null) return null
+      return mark.textContent
+    })()
+  `)
+  if (typeof found === 'string') squiggle = found
+}
+add(
+  'a typescript error squiggles without saving',
+  squiggle !== null,
+  squiggle === null ? 'no diagnostic after 40s' : `underlined ${JSON.stringify(squiggle)}`
+)
 
 add('the renderer logged nothing', problems.length === 0, problems.slice(0, 3).join(' | ') || 'clean')
 

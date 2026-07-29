@@ -141,7 +141,33 @@ export type IpcContract = {
     request: { session: Session }
     response: Record<string, never>
   }
+
+  /**
+   * Start the language server for the current workspace, if it is not already
+   * running. Idempotent — the renderer calls it whenever a file the server
+   * handles is opened, rather than tracking lifecycle itself.
+   */
+  'lsp:start': {
+    request: Record<string, never>
+    response: { state: LspState }
+  }
+
+  /**
+   * One JSON-RPC message, renderer to server, already serialised.
+   *
+   * Deliberately opaque. Main frames it and writes it to the server's stdin and
+   * does not otherwise care what it says: @codemirror/lsp-client owns the
+   * protocol, and a main process that also parsed requests would be a second
+   * implementation to keep in step with it.
+   */
+  'lsp:send': {
+    request: { message: string }
+    response: Record<string, never>
+  }
 }
+
+/** Where the language server is in its lifecycle. */
+export type LspState = 'stopped' | 'starting' | 'running' | 'failed'
 
 /** What is worth restoring. Deliberately not the file contents — those live on disk. */
 export type Session = {
@@ -189,7 +215,9 @@ export const IPC_CHANNELS = [
   'dialog:resolveConflict',
   'app:setDirtyCount',
   'session:load',
-  'session:save'
+  'session:save',
+  'lsp:start',
+  'lsp:send'
 ] as const
 
 /**
@@ -208,12 +236,28 @@ export type IpcEventContract = {
   'file:changed-on-disk': { path: string; mtimeMs: number }
   /** The tree changed on disk and should reload the given directory. */
   'fs:invalidate': { path: string }
+  /**
+   * One JSON-RPC message, server to renderer, still serialised.
+   *
+   * This is the channel the push table was built for before anything needed
+   * it: the server talks whenever it likes, and diagnostics in particular
+   * arrive unsolicited some time after a change.
+   */
+  'lsp:message': { message: string }
+  /** The language server changed state. `detail` explains a failure. */
+  'lsp:status': { state: LspState; detail?: string }
 }
 
 export type IpcEvent = keyof IpcEventContract & string
 export type IpcEventPayload<E extends IpcEvent> = IpcEventContract[E]
 
-export const IPC_EVENTS = ['workspace:changed', 'file:changed-on-disk', 'fs:invalidate'] as const
+export const IPC_EVENTS = [
+  'workspace:changed',
+  'file:changed-on-disk',
+  'fs:invalidate',
+  'lsp:message',
+  'lsp:status'
+] as const
 
 type MissingEvent = Exclude<IpcEvent, (typeof IPC_EVENTS)[number]>
 type AllEventsAllowlisted = [MissingEvent] extends [never]

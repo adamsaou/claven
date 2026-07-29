@@ -5,6 +5,7 @@ import { handle, emit, assertEveryChannelHandled } from './ipc'
 import { getWorkspaceRoot, resolveInsideWorkspace, setWorkspaceRoot } from './workspace'
 import { readTextFile, writeTextFile } from './textfile'
 import { loadSession, saveSession } from './session'
+import { sendToLanguageServer, startLanguageServer, stopLanguageServer } from './lsp'
 import type { DirEntry } from '../shared/files'
 
 /** Directories never worth walking or listing. */
@@ -60,6 +61,12 @@ export function registerHandlers(): void {
 
     const picked = result.canceled ? undefined : result.filePaths[0]
     if (picked === undefined) return { root: getWorkspaceRoot() }
+
+    // The old server was initialised against the old root and cannot be told
+    // to move. Stopping it here means the next file opened starts a fresh one
+    // pointed at the right project, rather than one quietly resolving imports
+    // against a directory the user has left.
+    stopLanguageServer()
 
     const root = await setWorkspaceRoot(picked)
     // Pushed as well as returned: the invoke result only reaches the caller,
@@ -208,6 +215,13 @@ export function registerHandlers(): void {
 
   handle('session:save', async (request) => {
     await saveSession(request.session)
+    return {}
+  })
+
+  handle('lsp:start', () => ({ state: startLanguageServer() }))
+
+  handle('lsp:send', (request) => {
+    sendToLanguageServer(request.message)
     return {}
   })
 

@@ -43,7 +43,7 @@ configs, TURN credentials and keys stay out, permanently.
 | UI layer | React + TypeScript + Vite + Tailwind. Cheap and swappable, not worth debating. |
 | **Editor core** | **CodeMirror 6**, behind a single adapter module. Reasoning below. Closed 2026-07-26. |
 | Syntax | **Lezer**, via `@codemirror/lang-javascript` (TS/TSX), `lang-cpp`, `lang-java`. Supersedes the earlier "tree-sitter" row — with CM6 those grammars ship maintained, and bolting tree-sitter on top is 15+ hours for no visible difference. |
-| Language intel | LSP over JSON-RPC on stdio, via `@codemirror/lsp-client`. **One server before September: `typescript-language-server`.** clangd needs `compile_commands.json` on Windows/MinGW or it guesses include paths — a multi-evening hole attached to a workload that compiles fine without it. |
+| Language intel | LSP over JSON-RPC on stdio, via `@codemirror/lsp-client`. **One server before September: TypeScript's own**, `tsc --lsp --stdio`. Amended 2026-07-29 — it said `typescript-language-server`, which cannot work here: that wrapper drives `tsserver.js`, and TS 7 is the Go rewrite whose `lib/` has no such file. It exits during `initialize`. See the LSP note below. clangd needs `compile_commands.json` on Windows/MinGW or it guesses include paths — a multi-evening hole attached to a workload that compiles fine without it. |
 | AI agents | ACP (Agent Client Protocol). Premise-neutral. Season two — M6 at the earliest. |
 | Terminal | xterm.js + `node-pty`. |
 | Platforms | Windows and Linux first-class. **macOS is portable-by-construction but untested until I own a Mac** — I cannot run, sign or notarise it, so claiming it as first-class was an unfunded mandate. |
@@ -71,6 +71,33 @@ decays within a month of M3.
 **"From scratch" is retired.** With CM6 this is an editor built *around*
 CodeMirror. The honest description is "built in public." The rope still gets
 written — as its own benchmarked repo, off the critical path.
+
+### The language server, and the two surprises in it
+
+Both of these were measured against the real server, not read about.
+
+**`typescript-language-server` is a dead end on TypeScript 7.** It drives
+`tsserver.js`. TS 7 is the Go rewrite and ships `tsc.js` and `getExePath.js` and
+nothing else, so the wrapper exits during `initialize` with "Could not find a
+valid TypeScript installation". Using it would mean installing TypeScript 5
+alongside 7 purely to feed it — two compilers on disk, and an editor whose
+squiggles can disagree with what `npm run typecheck` says. TypeScript 7 instead
+ships its own LSP server inside the native binary, which is the one thing
+guaranteed to agree with the build. `--stdio` is required; without it the server
+refuses with "only stdio is supported".
+
+**TypeScript 7 does not really push diagnostics.** It advertises a
+`diagnosticProvider` and expects to be asked, via `textDocument/diagnostic`.
+`@codemirror/lsp-client` 6.2.5 only listens for `publishDiagnostics`. Measured:
+the push fired once with an empty list while the pull returned the actual error.
+So diagnostics are pulled by a `linter` source in the adapter, and everything
+else — completion, hover, go-to-definition, rename — comes from
+`languageServerSupport` unchanged.
+
+Related: the client has no hook for server-to-client *requests*, so
+`client/registerCapability` is answered inside the Transport. Declaring
+`dynamicRegistration: false` is the polite fix and was tried first; TypeScript
+registers regardless.
 
 ### Licensing — read before touching the license or accepting a PR
 

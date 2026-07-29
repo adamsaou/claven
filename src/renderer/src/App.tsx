@@ -8,7 +8,8 @@ import { ContextMenu, type MenuItem, type MenuRequest } from './ContextMenu'
 import { ActivityBar, type Container } from './ActivityBar'
 import { Icon, iconForPath } from './Icons'
 import type { DirEntry, LineEnding } from '../../shared/files'
-import type { IpcResult } from '../../shared/ipc'
+import type { IpcResult, LspState } from '../../shared/ipc'
+import { hasLanguageServer } from './editor/lsp'
 import { CodeMirrorEditor, languageForPath, type CursorPosition } from './editor/CodeMirrorEditor'
 import type { FileMeta } from '../../shared/files'
 
@@ -71,6 +72,28 @@ export default function App(): React.JSX.Element {
 
   const [cursors, setCursors] = useState<Record<string, { line: number; column: number }>>({})
   const [restored, setRestored] = useState(false)
+  const [lspState, setLspState] = useState<LspState>('stopped')
+
+  useEffect(() => window.claven.subscribe('lsp:status', (payload) => {
+    setLspState(payload.state)
+    if (payload.state === 'failed' && payload.detail !== undefined) {
+      setNotice({ kind: 'error', text: `language server: ${payload.detail}` })
+    }
+  }), [])
+
+  /**
+   * Start the server the first time a file it serves is opened, rather than on
+   * launch. Starting it eagerly means every session pays for a TypeScript
+   * program, including the ones spent editing a markdown file.
+   *
+   * The handler is idempotent, so this does not need to track whether it has
+   * already run.
+   */
+  useEffect(() => {
+    if (root === null || active === null) return
+    if (!hasLanguageServer(languageForPath(active.path))) return
+    void window.claven.invoke('lsp:start', {})
+  }, [root, active])
 
   useEffect(() => {
     // Proves the push channel end to end: the root also arrives unsolicited.
@@ -676,6 +699,7 @@ export default function App(): React.JSX.Element {
             <CodeMirrorEditor
               docId={active.path}
               openDocIds={openDocIds}
+              rootPath={root}
               value={active.content}
               language={languageForPath(active.path)}
               onChange={(content) =>
@@ -717,6 +741,13 @@ export default function App(): React.JSX.Element {
               <span>{active.meta.encoding}</span>
               <span className="uppercase">{active.meta.lineEnding}</span>
               {dirty && <span className="text-ember">unsaved</span>}
+              {/* Only for files a server actually handles — on a markdown file
+                  "lsp: stopped" would report a problem that does not exist. */}
+              {hasLanguageServer(languageForPath(active.path)) && lspState !== 'running' && (
+                <span className={lspState === 'failed' ? 'text-error' : 'text-ink-dim'}>
+                  {lspState === 'starting' ? 'starting language server' : `language server ${lspState}`}
+                </span>
+              )}
             </>
           )}
             <span className="ms-auto truncate ps-4">

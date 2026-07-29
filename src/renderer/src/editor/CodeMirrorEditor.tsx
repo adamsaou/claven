@@ -14,6 +14,7 @@ import { html } from '@codemirror/lang-html'
 import { css } from '@codemirror/lang-css'
 import { rust } from '@codemirror/lang-rust'
 import { clavenDark } from './clavenDark'
+import { lspExtensionFor } from './lsp'
 
 /**
  * THE ADAPTER. This is the only file in the app permitted to import
@@ -90,6 +91,11 @@ type Props = {
   language: EditorLanguage
   /** Every open document. State cached for anything not listed here is dropped. */
   openDocIds: string[]
+  /**
+   * The workspace root. Null means no folder is open, and a language server
+   * cannot be started without one — it has no project to reason about.
+   */
+  rootPath: string | null
   onChange: (value: string) => void
   onSave: () => void
   onCursor?: (position: CursorPosition) => void
@@ -105,6 +111,7 @@ export function CodeMirrorEditor({
   value,
   language,
   openDocIds,
+  rootPath,
   onChange,
   onSave,
   onCursor,
@@ -135,7 +142,12 @@ export function CodeMirrorEditor({
   const mounted = useRef<string | null>(null)
 
   const buildState = useCallback(
-    (doc: string, forLanguage: EditorLanguage): EditorState =>
+    (
+      doc: string,
+      forLanguage: EditorLanguage,
+      forDocId: string,
+      forRoot: string | null
+    ): EditorState =>
       EditorState.create({
         doc,
         extensions: [
@@ -184,7 +196,11 @@ export function CodeMirrorEditor({
             }
           }),
           clavenDark,
-          ...languageExtension(forLanguage)
+          ...languageExtension(forLanguage),
+          // Last, so the server's diagnostics and completions layer over the
+          // grammar rather than the grammar overriding them. Returns nothing
+          // for a language with no server, which is most of them.
+          ...(forRoot === null ? [] : lspExtensionFor(forRoot, forDocId, forLanguage))
         ]
       }),
     []
@@ -230,7 +246,7 @@ export function CodeMirrorEditor({
     }
 
     const cached = cache.current.get(docId)
-    instance.setState(cached?.state ?? buildState(value, language))
+    instance.setState(cached?.state ?? buildState(value, language, docId, rootPath))
     mounted.current = docId
 
     if (cached === undefined) {
@@ -248,7 +264,9 @@ export function CodeMirrorEditor({
     })
     return () => cancelAnimationFrame(frame)
     // initialCursor is read only when a document is opened for the first time;
-    // listing it would re-run this on every cursor move.
+    // listing it would re-run this on every cursor move. rootPath is read at
+    // state-creation time for the same reason — the workspace changing tears
+    // the whole editor down anyway.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docId, language, buildState, placeCursor])
 
