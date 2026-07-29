@@ -371,6 +371,69 @@ add(
   completion === null ? 'no autocomplete containing "greet"' : completion.slice(0, 60)
 )
 
+/**
+ * M4: a real shell, running a real command.
+ *
+ * Typed rather than injected, and the marker is echoed back by the shell
+ * itself, so a pass means the whole path worked: keystrokes to the pty, the
+ * shell's output back over the push channel, and xterm rendering it.
+ */
+await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', modifiers: 2, key: '`', code: 'Backquote', windowsVirtualKeyCode: 192, nativeVirtualKeyCode: 192 })
+await send('Input.dispatchKeyEvent', { type: 'keyUp', modifiers: 2, key: '`', code: 'Backquote', windowsVirtualKeyCode: 192, nativeVirtualKeyCode: 192 })
+
+let terminalPresent = false
+for (let i = 0; i < 20 && !terminalPresent; i += 1) {
+  await sleep(500)
+  terminalPresent = (await evaluate(`!!document.querySelector('.xterm-screen')`)) === true
+}
+add('ctrl+backtick opens a terminal', terminalPresent, terminalPresent ? 'xterm mounted' : 'no terminal appeared')
+
+let shellOutput = null
+if (terminalPresent) {
+  // Wait for a prompt before typing, or the keystrokes go to a shell that has
+  // not finished starting and are silently dropped.
+  await sleep(2500)
+  await evaluate(`document.querySelector('.xterm-helper-textarea')?.focus(), true`)
+  await send('Input.insertText', { text: 'echo CLAVEN_TERMINAL_WORKS' })
+  await sleep(400)
+  /**
+   * Enter is dispatched inside the page rather than through CDP.
+   *
+   * xterm decides what to send the shell from `keyCode` on the keydown event.
+   * A `\r` inside inserted text never produces a keydown at all, and CDP's own
+   * key events did not produce one xterm recognised as Enter, so the command
+   * just sat on the prompt line unsent.
+   */
+  await evaluate(`
+    (() => {
+      const target = document.querySelector('.xterm-helper-textarea')
+      if (target === null) return false
+      const event = new KeyboardEvent('keydown', {
+        key: 'Enter', code: 'Enter', bubbles: true, cancelable: true
+      })
+      Object.defineProperty(event, 'keyCode', { get: () => 13 })
+      Object.defineProperty(event, 'which', { get: () => 13 })
+      target.dispatchEvent(event)
+      return true
+    })()
+  `)
+  for (let i = 0; i < 25 && shellOutput === null; i += 1) {
+    await sleep(700)
+    const screen = await evaluate(
+      `document.querySelector('.xterm-rows')?.innerText ?? ''`
+    )
+    // Twice: once as the echoed keystrokes, once as the command's output.
+    if (typeof screen === 'string' && (screen.match(/CLAVEN_TERMINAL_WORKS/g) ?? []).length >= 2) {
+      shellOutput = 'shell echoed the marker back'
+    }
+  }
+}
+add(
+  'the shell runs a command and returns output',
+  shellOutput !== null,
+  shellOutput ?? `no output. rows were: ${JSON.stringify((await evaluate(`document.querySelector('.xterm-rows')?.innerText ?? ''`) ?? '').replace(/\s+/g, ' ').slice(0, 160))}`
+)
+
 add('the renderer logged nothing', problems.length === 0, problems.slice(0, 3).join(' | ') || 'clean')
 
 let failures = 0

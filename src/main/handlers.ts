@@ -6,6 +6,7 @@ import { getWorkspaceRoot, resolveInsideWorkspace, setWorkspaceRoot } from './wo
 import { readTextFile, writeTextFile } from './textfile'
 import { loadSession, saveSession } from './session'
 import { sendToLanguageServer, startLanguageServer, stopLanguageServer } from './lsp'
+import { killPty, resizePty, startPty, writePty } from './pty'
 import type { DirEntry } from '../shared/files'
 
 /** Directories never worth walking or listing. */
@@ -222,6 +223,23 @@ export function registerHandlers(): void {
 
   handle('lsp:send', (request) => {
     sendToLanguageServer(request.message)
+    return {}
+  })
+
+  handle('pty:start', (request) => startPty(request.cols, request.rows))
+
+  handle('pty:write', (request) => {
+    writePty(request.id, request.data)
+    return {}
+  })
+
+  handle('pty:resize', (request) => {
+    resizePty(request.id, request.cols, request.rows)
+    return {}
+  })
+
+  handle('pty:kill', (request) => {
+    killPty(request.id)
     return {}
   })
 

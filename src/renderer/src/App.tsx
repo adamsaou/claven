@@ -10,6 +10,7 @@ import { Icon, iconForPath } from './Icons'
 import type { DirEntry, LineEnding } from '../../shared/files'
 import type { IpcResult, LspState } from '../../shared/ipc'
 import { hasLanguageServer } from './editor/lsp'
+import { TerminalPanel } from './terminal/TerminalPanel'
 import { CodeMirrorEditor, languageForPath, type CursorPosition } from './editor/CodeMirrorEditor'
 import type { FileMeta } from '../../shared/files'
 
@@ -60,6 +61,12 @@ export default function App(): React.JSX.Element {
   const [menu, setMenu] = useState<MenuRequest | null>(null)
   const [sidebarVisible, setSidebarVisible] = useState(true)
   const [pendingChord, setPendingChord] = useState<string | null>(null)
+  /**
+   * Mounted from the first time it is opened and never unmounted, so toggling
+   * it away does not kill the shell you were halfway through using.
+   */
+  const [terminalOpen, setTerminalOpen] = useState(false)
+  const [terminalStarted, setTerminalStarted] = useState(false)
   const activeTabRef = useRef<HTMLDivElement>(null)
 
   // Only the explorer exists, so ActivityBar renders null. It appears by itself
@@ -510,6 +517,15 @@ export default function App(): React.JSX.Element {
       { id: 'workspace.open', title: 'open folder', keys: 'ctrl+k ctrl+o', run: () => void openFolder() },
       { id: 'file.save', title: 'save file', keys: 'ctrl+s', enabled: dirty, run: () => void save() },
       {
+        id: 'view.toggleTerminal',
+        title: 'toggle terminal',
+        keys: 'ctrl+`',
+        run: () => {
+          setTerminalStarted(true)
+          setTerminalOpen((open) => !open)
+        }
+      },
+      {
         id: 'view.toggleSidebar',
         title: 'toggle sidebar',
         keys: 'ctrl+b',
@@ -598,6 +614,12 @@ export default function App(): React.JSX.Element {
       if (event.shiftKey && event.key.toLowerCase() === 'p') {
         event.preventDefault()
         setPaletteOpen((open) => !open)
+      } else if (event.key === '`') {
+        // Ctrl+` is every editor's terminal toggle. Matched on the key itself
+        // because it is punctuation and would not match any of the letters.
+        event.preventDefault()
+        setTerminalStarted(true)
+        setTerminalOpen((open) => !open)
       } else if (event.key.toLowerCase() === 'b') {
         event.preventDefault()
         setSidebarVisible((visible) => !visible)
@@ -726,6 +748,33 @@ export default function App(): React.JSX.Element {
             </div>
           )}
         </div>
+
+        {/* Kept mounted once opened and hidden with CSS rather than unmounted,
+            so toggling the panel away does not kill a shell mid-command. */}
+        {terminalStarted && (
+          <div
+            className="border-line bg-obsidian shrink-0 border-t"
+            style={{ height: terminalOpen ? '15rem' : 0, overflow: 'hidden' }}
+          >
+            <div
+              className="border-line text-ink-dim flex items-center justify-between border-b px-3 text-[10px] font-medium uppercase"
+              style={{ letterSpacing: '0.14em', height: 'var(--statusbar-h)' }}
+            >
+              <span>terminal</span>
+              <button
+                onClick={() => setTerminalOpen(false)}
+                aria-label="hide terminal"
+                className="hover:text-ink transition-colors"
+                style={{ transitionDuration: 'var(--dur-micro)' }}
+              >
+                ×
+              </button>
+            </div>
+            <div style={{ height: `calc(100% - var(--statusbar-h))` }}>
+              <TerminalPanel visible={terminalOpen} onExit={() => setTerminalOpen(false)} />
+            </div>
+          </div>
+        )}
 
         <footer
           className="border-line bg-surface-1 text-ink-muted flex shrink-0 items-center gap-4 border-t px-3 text-xs"

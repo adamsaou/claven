@@ -2,6 +2,7 @@ import { app, shell, dialog, BrowserWindow, Menu } from 'electron'
 import { join } from 'node:path'
 import { registerHandlers, getDirtyCount } from './handlers'
 import { stopLanguageServer } from './lsp'
+import { killAllPtys } from './pty'
 
 const isDev = !app.isPackaged
 
@@ -168,10 +169,14 @@ if (!isSmokeRun && !app.requestSingleInstanceLock()) {
 
   // An orphaned language server is a few hundred megabytes held by a process
   // with nothing left to serve, and on Windows it outlives the app happily.
-  app.on('before-quit', () => stopLanguageServer())
+  app.on('before-quit', () => {
+    stopLanguageServer()
+    killAllPtys()
+  })
 
   app.on('window-all-closed', () => {
     stopLanguageServer()
+    killAllPtys()
     // macOS convention is to stay alive with no windows; everywhere else quits.
     if (process.platform !== 'darwin') app.quit()
   })

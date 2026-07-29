@@ -164,6 +164,38 @@ export type IpcContract = {
     request: { message: string }
     response: Record<string, never>
   }
+
+  /**
+   * Open a shell. Returns the id every later call uses.
+   *
+   * Keyed by id even though the UI opens one terminal, because adding an id to
+   * a contract that is already live is exactly the retrofit this table exists
+   * to prevent.
+   */
+  'pty:start': {
+    request: { cols: number; rows: number }
+    response: { id: string }
+  }
+
+  /** Keystrokes, straight through. The shell decides what they mean. */
+  'pty:write': {
+    request: { id: string; data: string }
+    response: Record<string, never>
+  }
+
+  /**
+   * The terminal was resized. Without this the shell keeps wrapping lines at
+   * the width it started with, and anything drawing a box gets it wrong.
+   */
+  'pty:resize': {
+    request: { id: string; cols: number; rows: number }
+    response: Record<string, never>
+  }
+
+  'pty:kill': {
+    request: { id: string }
+    response: Record<string, never>
+  }
 }
 
 /** Where the language server is in its lifecycle. */
@@ -217,7 +249,11 @@ export const IPC_CHANNELS = [
   'session:load',
   'session:save',
   'lsp:start',
-  'lsp:send'
+  'lsp:send',
+  'pty:start',
+  'pty:write',
+  'pty:resize',
+  'pty:kill'
 ] as const
 
 /**
@@ -246,6 +282,10 @@ export type IpcEventContract = {
   'lsp:message': { message: string }
   /** The language server changed state. `detail` explains a failure. */
   'lsp:status': { state: LspState; detail?: string }
+  /** Output from a shell. Arrives whenever the shell feels like it. */
+  'pty:data': { id: string; data: string }
+  /** A shell exited, whether the user typed `exit` or it died. */
+  'pty:exit': { id: string; code: number }
 }
 
 export type IpcEvent = keyof IpcEventContract & string
@@ -256,7 +296,9 @@ export const IPC_EVENTS = [
   'file:changed-on-disk',
   'fs:invalidate',
   'lsp:message',
-  'lsp:status'
+  'lsp:status',
+  'pty:data',
+  'pty:exit'
 ] as const
 
 type MissingEvent = Exclude<IpcEvent, (typeof IPC_EVENTS)[number]>
