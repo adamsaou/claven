@@ -24,6 +24,15 @@ command.
 **Voice.** Direct and short. No marketing register, no over-polished AI prose.
 Docs and commit messages should sound like a person wrote them.
 
+**The devlog is drafted in conversation, never written straight to the site.**
+Settled 2026-07-29. An assistant produces the draft in chat, I rewrite it, and
+only then does it land in `site/src/content/log/`. Docs, roadmap and chrome can
+be written and shipped directly — the log is the exception, because it is a
+personal build log published under my name on a project I intend to sell, and
+prose I did not write being attributed to me is not fixed by the facts being
+correct. Anything that reaches the directory before my pass carries
+`draft: true`, which keeps it out of the index, the landing page and the feed.
+
 **Secrets never enter the repo.** `.env.example` holds fakes. Real coturn
 configs, TURN credentials and keys stay out, permanently.
 
