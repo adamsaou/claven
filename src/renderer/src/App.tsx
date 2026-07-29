@@ -519,7 +519,7 @@ export default function App(): React.JSX.Element {
       {
         id: 'view.toggleTerminal',
         title: 'toggle terminal',
-        keys: 'ctrl+`',
+        keys: 'ctrl+j',
         run: () => {
           setTerminalStarted(true)
           setTerminalOpen((open) => !open)
@@ -614,9 +614,19 @@ export default function App(): React.JSX.Element {
       if (event.shiftKey && event.key.toLowerCase() === 'p') {
         event.preventDefault()
         setPaletteOpen((open) => !open)
-      } else if (event.key === '`') {
-        // Ctrl+` is every editor's terminal toggle. Matched on the key itself
-        // because it is punctuation and would not match any of the letters.
+      } else if (event.key.toLowerCase() === 'j') {
+        /**
+         * Ctrl+J rather than the Ctrl+backtick every editor defaults to.
+         *
+         * Backtick is a plain key on a US layout and something else nearly
+         * everywhere else: a dead key on French and many other European
+         * layouts, AltGr on AZERTY. A default that costs one keypress for
+         * some people and three for others is not a default, and Claven is
+         * written on a machine where it is three.
+         *
+         * Ctrl+J is VS Code's own panel toggle, so it is still muscle memory,
+         * and it is a letter, so it costs the same everywhere.
+         */
         event.preventDefault()
         setTerminalStarted(true)
         setTerminalOpen((open) => !open)

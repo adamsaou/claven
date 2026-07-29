@@ -378,15 +378,15 @@ add(
  * itself, so a pass means the whole path worked: keystrokes to the pty, the
  * shell's output back over the push channel, and xterm rendering it.
  */
-await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', modifiers: 2, key: '`', code: 'Backquote', windowsVirtualKeyCode: 192, nativeVirtualKeyCode: 192 })
-await send('Input.dispatchKeyEvent', { type: 'keyUp', modifiers: 2, key: '`', code: 'Backquote', windowsVirtualKeyCode: 192, nativeVirtualKeyCode: 192 })
+await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', modifiers: 2, key: 'j', code: 'KeyJ', windowsVirtualKeyCode: 74, nativeVirtualKeyCode: 74 })
+await send('Input.dispatchKeyEvent', { type: 'keyUp', modifiers: 2, key: 'j', code: 'KeyJ', windowsVirtualKeyCode: 74, nativeVirtualKeyCode: 74 })
 
 let terminalPresent = false
 for (let i = 0; i < 20 && !terminalPresent; i += 1) {
   await sleep(500)
   terminalPresent = (await evaluate(`!!document.querySelector('.xterm-screen')`)) === true
 }
-add('ctrl+backtick opens a terminal', terminalPresent, terminalPresent ? 'xterm mounted' : 'no terminal appeared')
+add('ctrl+j opens a terminal', terminalPresent, terminalPresent ? 'xterm mounted' : 'no terminal appeared')
 
 let shellOutput = null
 if (terminalPresent) {
