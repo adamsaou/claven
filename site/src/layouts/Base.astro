@@ -10,7 +10,7 @@ interface Props {
   bare?: boolean
 }
 const { title, description, bare = false } = Astro.props
-const fullTitle = bare ? title : `${title} — Claven`
+const fullTitle = bare ? title : `${title} · Claven`
 const site = Astro.site ?? 'https://claven.dev'
 const canonical = new URL(Astro.url.pathname, site)
 /**
@@ -49,7 +49,7 @@ const shareCard = new URL('/og.png', site)
     <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="Claven — a code editor, built in public." />
+    <meta property="og:image:alt" content="Claven, a code editor built in public." />
     {/* summary_large_image, not summary: with an image this size, `summary`
         crops it to a small square and loses the wordmark. */}
     <meta name="twitter:card" content="summary_large_image" />

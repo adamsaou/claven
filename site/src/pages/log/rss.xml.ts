@@ -13,7 +13,7 @@ export async function GET(context: APIContext): Promise<Response> {
   )
 
   return rss({
-    title: 'Claven — log',
+    title: 'Claven log',
     description: 'Notes from building a code editor in public.',
     site: context.site ?? 'https://claven.dev',
     items: entries.map((entry) => ({
