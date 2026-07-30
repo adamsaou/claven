@@ -119,6 +119,13 @@ type Props = {
   onCursor?: (position: CursorPosition) => void
   /** Where to place the cursor the first time a document is opened. */
   initialCursor?: { line: number; column: number }
+  /**
+   * Jump to a position now, for a search result.
+   *
+   * The nonce is what makes clicking the same hit twice work: without it the
+   * prop would be unchanged and the effect would not re-run.
+   */
+  revealAt?: { line: number; column: number; nonce: number }
 }
 
 /** What has to survive a tab switch. Scroll is not part of EditorState, so it rides along. */
@@ -133,7 +140,8 @@ export function CodeMirrorEditor({
   onChange,
   onSave,
   onCursor,
-  initialCursor
+  initialCursor,
+  revealAt
 }: Props): React.JSX.Element {
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
@@ -327,6 +335,15 @@ export function CodeMirrorEditor({
       instance.dispatch({ changes: { from: 0, to: current.length, insert: value } })
     }
   }, [value, docId])
+
+  // Jump to a search hit. Runs after the document swap above, so opening a
+  // result in a file that was not yet on screen lands in the right place.
+  useEffect(() => {
+    const instance = view.current
+    if (instance === null || revealAt === undefined || mounted.current !== docId) return
+    placeCursor(instance, revealAt)
+    instance.focus()
+  }, [revealAt?.nonce, docId, placeCursor])
 
   // Drop the state of files that are no longer open, so a long session does not
   // hold every document it has ever shown.

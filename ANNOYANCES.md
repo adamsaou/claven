@@ -55,3 +55,4 @@ constrained environments.** If the log says otherwise, the log wins.
 2026-07-29  Bound the terminal to ctrl+backtick because every editor does. Backtick is one key on a US layout and a dead key or AltGr elsewhere, so the default costs me three keypresses and an American one. [C?]
 2026-07-29  VS Code's layout is cryptic. Putting the terminal or the editor where I actually want it is either impossible or buried somewhere I never remember, so I just live with the default I was given.
 2026-07-29  CLI AI tools look bad in a terminal. It is a grid of fixed cells pretending to render a conversation: diffs, code blocks and markdown all squeezed through something that was designed for teletype output.
+2026-07-30  Two matches on one line render as two identical-looking rows, because the preview is clipped before the second one. VS Code has the same problem, which is not a defence.

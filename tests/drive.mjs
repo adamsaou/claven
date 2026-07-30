@@ -48,6 +48,14 @@ const ts = join(workspace, 'typed.ts')
  * it was working exactly as designed.
  */
 const watched = join(workspace, 'watched.txt')
+/**
+ * Never opened as a tab, so its buffer cannot diverge from disk.
+ *
+ * Search reads what is on disk. Clicking a hit in a file with unsaved edits
+ * would open the buffer and land the cursor on a line number that only exists
+ * in the file as saved, which is a real limitation rather than a test artifact.
+ */
+const haystack = join(workspace, 'haystack.txt')
 const lines = (word) => Array.from({ length: 8 }, (_, i) => `${word} line ${i}`).join('\n') + '\n'
 await writeFile(a, lines('alpha'))
 await writeFile(b, lines('bravo'))
@@ -62,6 +70,10 @@ await writeFile(
 // whole point of the check.
 await writeFile(ts, 'export const count: number = 1\n')
 await writeFile(watched, 'untouched\n')
+await writeFile(
+  haystack,
+  ['first', 'second', 'third', 'NEEDLE_ON_LINE_FOUR', 'fifth'].join('\n') + '\n'
+)
 
 // Seeded rather than clicked: opening a folder means a native dialog, and CDP
 // cannot reach one.
@@ -591,6 +603,74 @@ add(
   !/changed on disk/.test(afterSave),
   JSON.stringify(afterSave.trim().slice(0, 50))
 )
+
+/**
+ * Project search, through the panel.
+ *
+ * The smoke suite already proves the engine, including the UTF-16 case. This
+ * checks the parts only the renderer can get wrong: that the activity bar now
+ * exists at all, that streamed batches land in the list, and that clicking a
+ * hit opens the file and moves the cursor onto it.
+ */
+const activityBar = await evaluate(`!!document.querySelector('nav[aria-label="views"]')`)
+add(
+  'the activity bar appears now there are two containers',
+  activityBar === true,
+  activityBar === true ? 'rendered' : 'still null'
+)
+
+await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', modifiers: 10, key: 'F', code: 'KeyF', windowsVirtualKeyCode: 70 })
+await send('Input.dispatchKeyEvent', { type: 'keyUp', modifiers: 10, key: 'F', code: 'KeyF', windowsVirtualKeyCode: 70 })
+await sleep(600)
+const panelOpen = await evaluate(`!!document.querySelector('nav[aria-label="search"] input')`)
+add('ctrl+shift+f opens the search panel', panelOpen === true, panelOpen === true ? 'open' : 'not open')
+
+if (panelOpen === true) {
+  await evaluate(`document.querySelector('nav[aria-label="search"] input')?.focus(), true`)
+  // A string that exists in exactly one of the fixture files, so the count is
+  // predictable and a stray match would show up as a wrong number.
+  await send('Input.insertText', { text: 'NEEDLE_ON_LINE_FOUR' })
+
+  let footer = ''
+  for (let i = 0; i < 25 && !/match/.test(footer); i += 1) {
+    await sleep(600)
+    footer = String(
+      (await evaluate(`document.querySelector('nav[aria-label="search"] .border-t')?.textContent ?? ''`)) ?? ''
+    )
+  }
+  add('search reports what it found', /match/.test(footer), footer.slice(0, 80) || 'no footer')
+
+  const hits = await evaluate(
+    `document.querySelectorAll('nav[aria-label="search"] button[data-selected]').length`
+  )
+  add('results appear in the panel', (hits ?? 0) > 0, `${hits} rows`)
+
+  // Click the last row, which is a match rather than a file header, and check
+  // the status bar lands on line 4 of haystack.txt, where the needle is.
+  const opened = await evaluate(`
+    (() => {
+      const rows = document.querySelectorAll('nav[aria-label="search"] button[data-selected]')
+      const row = rows[rows.length - 1]
+      if (row === undefined) return false
+      row.click()
+      return true
+    })()
+  `)
+  let cursorAt = ''
+  if (opened === true) {
+    for (let i = 0; i < 15 && !/ln 4/.test(cursorAt); i += 1) {
+      await sleep(500)
+      cursorAt = String(
+        (await evaluate(`document.querySelector('footer .tabular-nums')?.textContent ?? ''`)) ?? ''
+      ).trim()
+    }
+  }
+  add(
+    'clicking a hit opens the file at that line',
+    /ln 4/.test(cursorAt),
+    cursorAt || 'cursor did not move'
+  )
+}
 
 add('the renderer logged nothing', problems.length === 0, problems.slice(0, 3).join(' | ') || 'clean')
 

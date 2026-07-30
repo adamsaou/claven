@@ -11,6 +11,7 @@ import type { DirEntry, LineEnding } from '../../shared/files'
 import type { IpcResult, LspState } from '../../shared/ipc'
 import { hasLanguageServer } from './editor/lsp'
 import { TerminalDock } from './terminal/TerminalDock'
+import { SearchPanel } from './SearchPanel'
 import { CodeMirrorEditor, languageForPath, type CursorPosition } from './editor/CodeMirrorEditor'
 import type { FileMeta } from '../../shared/files'
 
@@ -67,11 +68,32 @@ export default function App(): React.JSX.Element {
    */
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [terminalStarted, setTerminalStarted] = useState(false)
+  const [sidebarView, setSidebarView] = useState<'explorer' | 'search'>('explorer')
+  /**
+   * Where to put the cursor after opening a file from a search result. The nonce
+   * makes clicking the same hit twice reveal it again, which a plain
+   * {path,line,column} would not.
+   */
+  const [revealAt, setRevealAt] = useState<
+    { path: string; line: number; column: number; nonce: number } | null
+  >(null)
+  /** The same key FileTree writes, so the two sidebar views are the same width. */
+  const [sidebarWidth] = useState(() => {
+    const stored = Number(localStorage.getItem('claven.sidebar.width'))
+    return Number.isFinite(stored) && stored >= 140 ? stored : 200
+  })
   const activeTabRef = useRef<HTMLDivElement>(null)
 
-  // Only the explorer exists, so ActivityBar renders null. It appears by itself
-  // when a second container registers — diagnostics at M3 is the expected one.
-  const containers: Container[] = [{ id: 'explorer', label: 'explorer', icon: 'explorer' }]
+  /**
+   * Two containers now, so the activity bar stops rendering null and appears
+   * for the first time. Its documented one-time horizontal layout shift lands
+   * here, which is also why FileTree's resize handle measures from its own left
+   * edge rather than from the window's.
+   */
+  const containers: Container[] = [
+    { id: 'explorer', label: 'explorer', icon: 'explorer' },
+    { id: 'search', label: 'search', icon: 'search' }
+  ]
 
   const active = tabs.find((tab) => tab.path === activePath) ?? null
   const dirty = active !== null && active.content !== active.saved
@@ -183,29 +205,38 @@ export default function App(): React.JSX.Element {
     if (!result.ok) setNotice({ kind: 'error', text: result.error.message })
   }, [])
 
+  /**
+   * Open a file, and hand back the path it actually settled on.
+   *
+   * The return value is not a convenience. Callers pass paths built with a
+   * forward slash while tabs are keyed on the platform-separator path main
+   * resolved, so a caller that then wants to do something with "the tab it just
+   * opened" has to be told which one that is. Search's reveal-the-hit silently
+   * did nothing for exactly this reason: its path never equalled the tab's.
+   */
   const openFile = useCallback(
-    async (path: string) => {
+    async (path: string): Promise<string | null> => {
       if (tabs.some((tab) => tab.path === path)) {
         setActivePath(path)
-        return
+        return path
       }
       const result = await window.claven.invoke('fs:read', { path })
       if (!result.ok) {
         setNotice({ kind: 'error', text: result.error.message })
-        return
+        return null
       }
       const value = result.value
       const name = path.split(/[\\/]/).pop() ?? path
       if (value.kind === 'binary') {
         setNotice({ kind: 'info', text: `${name} is binary` })
-        return
+        return null
       }
       if (value.kind === 'too-large') {
         setNotice({
           kind: 'info',
           text: `${name} is ${(value.size / 1024 / 1024).toFixed(1)} mb, over the ${value.limit / 1024 / 1024} mb limit`
         })
-        return
+        return null
       }
       /**
        * Key the tab on the path main resolved, never on the one the caller
@@ -218,7 +249,7 @@ export default function App(): React.JSX.Element {
       const existing = tabs.find((tab) => tab.path === canonical)
       if (existing !== undefined) {
         setActivePath(canonical)
-        return
+        return canonical
       }
       setTabs((current) => [
         ...current,
@@ -236,6 +267,7 @@ export default function App(): React.JSX.Element {
           ? { kind: 'info', text: `mixed line endings — saving normalises to ${value.meta.lineEnding}` }
           : null
       )
+      return canonical
     },
     [tabs]
   )
@@ -571,6 +603,23 @@ export default function App(): React.JSX.Element {
       { id: 'workspace.open', title: 'open folder', keys: 'ctrl+k ctrl+o', run: () => void openFolder() },
       { id: 'file.save', title: 'save file', keys: 'ctrl+s', enabled: dirty, run: () => void save() },
       {
+        id: 'view.search',
+        title: 'search the project',
+        keys: 'ctrl+shift+f',
+        enabled: root !== null,
+        run: () => {
+          setSidebarVisible(true)
+          setSidebarView('search')
+          // Deferred a frame: the panel has to be visible before its input can
+          // take focus.
+          requestAnimationFrame(() => {
+            const box = document.querySelector<HTMLInputElement>('nav[aria-label="search"] input')
+            box?.focus()
+            box?.select()
+          })
+        }
+      },
+      {
         id: 'view.toggleTerminal',
         title: 'toggle terminal',
         keys: 'ctrl+j',
@@ -665,7 +714,16 @@ export default function App(): React.JSX.Element {
 
       // ctrl+shift+p matches every editor's muscle memory. Fighting that is a
       // cost with no upside.
-      if (event.shiftKey && event.key.toLowerCase() === 'p') {
+      if (event.shiftKey && event.key.toLowerCase() === 'f') {
+        event.preventDefault()
+        setSidebarVisible(true)
+        setSidebarView('search')
+        requestAnimationFrame(() => {
+          const box = document.querySelector<HTMLInputElement>('nav[aria-label="search"] input')
+          box?.focus()
+          box?.select()
+        })
+      } else if (event.shiftKey && event.key.toLowerCase() === 'p') {
         event.preventDefault()
         setPaletteOpen((open) => !open)
       } else if (event.key.toLowerCase() === 'j') {
@@ -717,19 +775,64 @@ export default function App(): React.JSX.Element {
       <TitleBar root={root} onOpenPalette={() => setPaletteOpen(true)} />
 
       <div className="flex min-h-0 flex-1">
-        <ActivityBar containers={containers} activeId="explorer" onSelect={() => undefined} />
+        <ActivityBar
+          containers={containers}
+          activeId={sidebarView}
+          onSelect={(id) => {
+            setSidebarVisible(true)
+            setSidebarView(id === 'search' ? 'search' : 'explorer')
+          }}
+        />
         {sidebarVisible && (
-          <FileTree
-            root={root}
-            activePath={activePath}
-            onOpenFile={(path) => void openFile(path)}
-            onOpenFolder={() => void openFolder()}
-            onContextMenu={(entry, event) => {
-              event.preventDefault()
-              const items = fileOperations(entry)
-              if (items.length > 0) setMenu({ x: event.clientX, y: event.clientY, items })
-            }}
-          />
+          <>
+            {/* Both containers stay mounted and one is hidden, the same decision
+                and the same reason as the terminal: switching away must not
+                discard a result set that took two seconds to produce, nor the
+                folders the tree had expanded.
+
+                `display: contents` on the wrapper, so FileTree carries on owning
+                its own width, border and resize handle rather than having a
+                second sized box put around it. */}
+            <div style={{ display: sidebarView === 'explorer' ? 'contents' : 'none' }}>
+              <FileTree
+                root={root}
+                activePath={activePath}
+                onOpenFile={(path) => void openFile(path)}
+                onOpenFolder={() => void openFolder()}
+                onContextMenu={(entry, event) => {
+                  event.preventDefault()
+                  const items = fileOperations(entry)
+                  if (items.length > 0) setMenu({ x: event.clientX, y: event.clientY, items })
+                }}
+              />
+            </div>
+            <nav
+              aria-label="search"
+              className="border-line bg-surface-1 h-full shrink-0 border-e"
+              style={{
+                // The width the tree was last dragged to, read from the same key
+                // it writes. Not resizable from this view yet.
+                width: `${sidebarWidth}px`,
+                display: sidebarView === 'search' ? 'block' : 'none'
+              }}
+            >
+              <SearchPanel
+                root={root}
+                onOpenHit={(file, line, column) => {
+                  if (root === null) return
+                  const path = `${root}/${file}`
+                  // Reveal against the path openFile settled on, never the one
+                  // built here: they differ by separator and the comparison in
+                  // the editor is exact.
+                  void openFile(path).then((opened) => {
+                    if (opened !== null) {
+                      setRevealAt({ path: opened, line, column, nonce: Date.now() })
+                    }
+                  })
+                }}
+              />
+            </nav>
+          </>
         )}
 
         <main className="bg-obsidian flex min-w-0 flex-1 flex-col">
@@ -795,6 +898,11 @@ export default function App(): React.JSX.Element {
               }
               onSave={() => void save()}
               initialCursor={cursors[active.path]}
+              revealAt={
+                revealAt !== null && revealAt.path === active.path
+                  ? { line: revealAt.line, column: revealAt.column, nonce: revealAt.nonce }
+                  : undefined
+              }
               onCursor={(position) => {
                 setCursor(position)
                 setCursors((current) => ({
