@@ -31,6 +31,38 @@ function swap16(buffer: Buffer): Buffer {
   return copy
 }
 
+/**
+ * Is this text, and if so how is it encoded.
+ *
+ * Exported so that project search shares this exact judgement rather than
+ * making its own. An independent binary sniff would find matches in files
+ * `fs:read` then refuses to open, which is a result row that cannot be clicked.
+ * Sharing the function makes the two agree by construction instead of by
+ * someone remembering to keep them in step.
+ */
+export type Classification =
+  | { kind: 'text'; encoding: TextEncoding; body: Buffer }
+  | { kind: 'binary' }
+
+export function classifyBytes(buffer: Buffer): Classification {
+  const { encoding, offset } = detectBom(buffer)
+  const body = buffer.subarray(offset)
+
+  // UTF-16 text is full of legitimate NUL bytes, so the sniff only makes sense
+  // once a UTF-16 BOM has been ruled out. Same order as readTextFile.
+  if (encoding === 'utf8' || encoding === 'utf8bom') {
+    if (body.subarray(0, BINARY_SNIFF_BYTES).includes(0)) return { kind: 'binary' }
+  }
+  return { kind: 'text', encoding, body }
+}
+
+export function decodeText(body: Buffer, encoding: TextEncoding): string {
+  return decode(body, encoding)
+}
+
+/** Exported for search, which needs offsets in the same space the editor uses. */
+export { normalizeToLf }
+
 function decode(body: Buffer, encoding: TextEncoding): string {
   switch (encoding) {
     case 'utf16le':
@@ -111,15 +143,10 @@ export async function readTextFile(path: string): Promise<ReadResult> {
     await handle.close()
   }
 
-  const { encoding, offset } = detectBom(buffer)
-  const body = buffer.subarray(offset)
-
-  // UTF-16 text is full of legitimate NUL bytes, so the binary sniff only makes
-  // sense once a UTF-16 BOM has been ruled out.
-  if (encoding === 'utf8' || encoding === 'utf8bom') {
-    const sniff = body.subarray(0, BINARY_SNIFF_BYTES)
-    if (sniff.includes(0)) return { kind: 'binary', path, size: stats.size }
-  }
+  // The same judgement project search uses, on purpose. See classifyBytes.
+  const classified = classifyBytes(buffer)
+  if (classified.kind === 'binary') return { kind: 'binary', path, size: stats.size }
+  const { encoding, body } = classified
 
   const raw = decode(body, encoding)
   const { lineEnding, mixed } = detectLineEnding(raw)
@@ -136,6 +163,38 @@ export async function readTextFile(path: string): Promise<ReadResult> {
       hadTrailingNewline: content.endsWith('\n'),
       mtimeMs: stats.mtimeMs,
       size: stats.size
+    }
+  }
+}
+
+/**
+ * Rename, retrying while the destination is briefly locked.
+ *
+ * On Windows a rename over an existing file is `MoveFileExW` with
+ * REPLACE_EXISTING, and Windows refuses it while any process holds a handle on
+ * the destination. Plenty of things hold one for a few milliseconds: Defender,
+ * the search indexer, OneDrive, a backup agent, and anything else that reads
+ * files in the background.
+ *
+ * The failure is nastier than it looks. `EPERM` is not `CHANGED_ON_DISK`, so the
+ * conflict dialog is skipped, the save reports an error nobody can act on, and
+ * the tab silently stays dirty. It reads as "claven randomly refuses to save"
+ * and nothing connects it to whatever was reading the file.
+ *
+ * Roughly 200ms of retries, then the real error. Narrowing our own window is not
+ * sufficient on its own, because the process holding the handle is usually not
+ * this one.
+ */
+async function renameWithRetry(temporary: string, path: string): Promise<void> {
+  const RETRYABLE = ['EPERM', 'EACCES', 'EBUSY']
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await rename(temporary, path)
+      return
+    } catch (cause) {
+      const code = cause instanceof Error && 'code' in cause ? String(cause.code) : ''
+      if (attempt >= 6 || !RETRYABLE.includes(code)) throw cause
+      await new Promise((resolve) => setTimeout(resolve, 30 * (attempt + 1)))
     }
   }
 }
@@ -187,7 +246,7 @@ export async function writeTextFile(
     } finally {
       await handle.close()
     }
-    await rename(temporary, path)
+    await renameWithRetry(temporary, path)
   } catch (error) {
     await unlink(temporary).catch(() => undefined)
     throw error
