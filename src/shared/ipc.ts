@@ -223,6 +223,27 @@ export type IpcContract = {
   }
 
   /**
+   * Every buffer with unsaved edits, so a crash does not take them.
+   *
+   * The whole set each time, not deltas. A missed "this one is clean now" would
+   * otherwise leave a stale backup that restores edits the user already saved.
+   *
+   * `session.ts` says file contents never go in the session, and it is right:
+   * a clean file lives on disk and a copy would be a second source of truth.
+   * Unsaved edits are the inverse. They exist in one place only, and that place
+   * is a renderer that a power cut ends.
+   */
+  'buffer:sync': {
+    request: { buffers: Array<{ path: string; content: string; mtimeMs: number }> }
+    response: Record<string, never>
+  }
+
+  'buffer:restore': {
+    request: Record<string, never>
+    response: { buffers: Array<{ path: string; content: string; mtimeMs: number }> }
+  }
+
+  /**
    * Which files to watch for changes made outside the editor, and the mtime the
    * renderer believes each one currently has.
    *
@@ -294,6 +315,8 @@ export const IPC_CHANNELS = [
   'pty:kill',
   'search:start',
   'search:cancel',
+  'buffer:sync',
+  'buffer:restore',
   'watch:files'
 ] as const
 

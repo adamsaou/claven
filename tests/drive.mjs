@@ -674,6 +674,87 @@ if (panelOpen === true) {
 
 add('the renderer logged nothing', problems.length === 0, problems.slice(0, 3).join(' | ') || 'clean')
 
+/**
+ * Unsaved work must survive a crash.
+ *
+ * The app is killed, not quit, so nothing gets a chance to flush on the way
+ * out. That is the whole point: a clean shutdown proves nothing about a power
+ * cut, and the flush-on-exit version of this feature passes a graceful test
+ * and loses your work in the case it exists for.
+ */
+await clickTab('watched.txt')
+await sleep(400)
+await focusEditor()
+await send('Input.insertText', { text: 'UNSAVED_SURVIVES_A_CRASH ' })
+// Longer than the 700ms backup debounce, so the write has happened.
+await sleep(1800)
+
+socket.close()
+child.kill('SIGKILL')
+await sleep(1500)
+
+const second = spawn(
+  ELECTRON,
+  ['.', `--user-data-dir=${userData}`, `--remote-debugging-port=${PORT + 1}`],
+  { cwd: REPO, stdio: ['ignore', 'ignore', 'ignore'] }
+)
+
+let secondPage = null
+for (let i = 0; i < 60 && secondPage === null; i += 1) {
+  await sleep(500)
+  const response = await fetch(`http://127.0.0.1:${PORT + 1}/json/list`).catch(() => null)
+  const targets = response ? await response.json().catch(() => []) : []
+  secondPage = targets.find((target) => target.type === 'page') ?? null
+}
+
+let survived = null
+if (secondPage !== null) {
+  const socket2 = new WebSocket(secondPage.webSocketDebuggerUrl)
+  await new Promise((resolve) => socket2.addEventListener('open', resolve))
+  let id2 = 1
+  const pending2 = new Map()
+  socket2.addEventListener('message', (event) => {
+    const message = JSON.parse(event.data)
+    if (message.id !== undefined) {
+      pending2.get(message.id)?.(message)
+      pending2.delete(message.id)
+    }
+  })
+  const send2 = (method, params = {}) =>
+    new Promise((resolve) => {
+      const id = id2++
+      pending2.set(id, resolve)
+      socket2.send(JSON.stringify({ id, method, params }))
+    })
+  const evaluate2 = async (expression) =>
+    (await send2('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }))
+      .result?.result?.value
+
+  for (let i = 0; i < 40 && survived === null; i += 1) {
+    await sleep(500)
+    const shown = await evaluate2(`
+      (() => {
+        const tab = Array.from(document.querySelectorAll('main .max-w-48'))
+          .find((n) => n.textContent === 'watched.txt')
+        if (tab === undefined) return null
+        tab.closest('div')?.querySelector('button')?.click()
+        return document.querySelector('.cm-content')?.textContent ?? null
+      })()
+    `)
+    if (typeof shown === 'string' && shown.includes('UNSAVED_SURVIVES_A_CRASH')) {
+      survived = shown.slice(0, 40)
+    }
+  }
+  socket2.close()
+}
+second.kill()
+
+add(
+  'unsaved edits survive being killed',
+  survived !== null,
+  survived ?? 'the edit was gone after the restart'
+)
+
 let failures = 0
 for (const check of checks) {
   if (!check.pass) failures += 1

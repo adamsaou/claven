@@ -8,6 +8,7 @@ import { loadSession, saveSession } from './session'
 import { sendToLanguageServer, startLanguageServer, stopLanguageServer } from './lsp'
 import { killPty, resizePty, startPty, writePty } from './pty'
 import { setWatchedFiles } from './watcher'
+import { restoreBuffers, syncBuffers } from './buffers'
 import { cancelAllSearches, cancelSearch, startSearch } from './search'
 import { walkFiles, type WalkStats } from './walk'
 import type { DirEntry } from '../shared/files'
@@ -228,6 +229,13 @@ export function registerHandlers(): void {
     killPty(request.id)
     return {}
   })
+
+  handle('buffer:sync', async (request) => {
+    await syncBuffers(request.buffers)
+    return {}
+  })
+
+  handle('buffer:restore', async () => ({ buffers: await restoreBuffers() }))
 
   handle('watch:files', (request) => {
     setWatchedFiles(request.files)

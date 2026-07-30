@@ -160,7 +160,32 @@ export default function App(): React.JSX.Element {
         })
       )
       const usable = opened.filter((tab): tab is Tab => tab !== null)
-      setTabs(usable)
+
+      /**
+       * Put unsaved edits back.
+       *
+       * `saved` deliberately stays as what is on disk right now, not as what
+       * was on disk when the backup was taken. The tab therefore comes back
+       * dirty, which is the truth, and if the file changed underneath in the
+       * meantime the mtime guard and the conflict dialog handle it exactly as
+       * they would have done had the app never closed.
+       */
+      const backups = await window.claven.invoke('buffer:restore', {})
+      const byPath = new Map(
+        backups.ok ? backups.value.buffers.map((buffer) => [buffer.path, buffer]) : []
+      )
+      const withEdits = usable.map((tab) => {
+        const backup = byPath.get(tab.path)
+        return backup === undefined ? tab : { ...tab, content: backup.content }
+      })
+      const restoredCount = withEdits.filter((tab) => tab.content !== tab.saved).length
+      if (restoredCount > 0) {
+        setNotice({
+          kind: 'info',
+          text: `restored ${restoredCount} unsaved ${restoredCount === 1 ? 'file' : 'files'}`
+        })
+      }
+      setTabs(withEdits)
       setActivePath(
         usable.some((tab) => tab.path === session.activePath)
           ? session.activePath
@@ -461,6 +486,25 @@ export default function App(): React.JSX.Element {
     // tabs is read through watchKey on purpose; see above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watchKey])
+
+  /**
+   * Back up every dirty buffer, debounced.
+   *
+   * Long enough not to write on every keystroke, short enough that a crash
+   * costs a sentence rather than a session. The whole dirty set goes each time
+   * so main can delete backups for anything that has since been saved.
+   */
+  useEffect(() => {
+    if (!restored) return
+    const timer = setTimeout(() => {
+      void window.claven.invoke('buffer:sync', {
+        buffers: tabs
+          .filter((tab) => tab.content !== tab.saved)
+          .map((tab) => ({ path: tab.path, content: tab.content, mtimeMs: tab.meta.mtimeMs }))
+      })
+    }, 700)
+    return () => clearTimeout(timer)
+  }, [restored, tabs])
 
   // Main cannot see React state, and a renderer cannot veto its own window
   // closing — so the count has to be pushed for the close guard to work.
