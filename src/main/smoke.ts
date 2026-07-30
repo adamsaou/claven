@@ -220,6 +220,128 @@ export async function runSmokeTest(window: BrowserWindow): Promise<number> {
       forced?.ok === true ? 'written' : `failed: ${forced?.ok === false ? forced.error.message : 'n/a'}`)
   }
 
+  // ---- project search ----------------------------------------------------
+
+  /**
+   * Search is streaming, so the results arrive as pushed events rather than as
+   * a response. This subscribes in the renderer, runs a query, and waits for
+   * the terminal event.
+   */
+  const runSearch = async (query: {
+    pattern: string
+    caseSensitive: boolean | null
+    wholeWord: boolean
+    regex: boolean
+  }): Promise<{ matches: Array<Record<string, unknown>>; done: Record<string, unknown> } | null> =>
+    evaluate(`
+      new Promise((resolve) => {
+        const matches = []
+        let id = null
+        const offMatch = window.claven.subscribe('search:matches', (p) => {
+          if (p.id === id) matches.push(...p.matches)
+        })
+        const offDone = window.claven.subscribe('search:done', (p) => {
+          if (p.id !== id) return
+          offMatch(); offDone()
+          resolve({ matches, done: p })
+        })
+        window.claven.invoke('search:start', { query: ${JSON.stringify(query)} }).then((r) => {
+          if (!r.ok) { offMatch(); offDone(); resolve({ matches: [], done: { error: r.error } }) }
+          else id = r.value.id
+        })
+        setTimeout(() => { offMatch(); offDone(); resolve(null) }, 20000)
+      })
+    `)
+
+  const literalSearch = await runSearch({
+    pattern: 'alpha',
+    caseSensitive: null,
+    wholeWord: false,
+    regex: false
+  })
+  add(
+    'search finds a literal across the workspace',
+    literalSearch !== null && literalSearch.matches.length > 0,
+    literalSearch === null ? 'timed out' : `${literalSearch.matches.length} matches in ${String(literalSearch.done.filesSearched)} files`
+  )
+
+  /**
+   * The check this whole subsystem turns on.
+   *
+   * `beta` in utf16be-bom.txt is 62 00 65 00 74 00 61 00 on disk while the
+   * needle is 62 65 74 61, so a search that byte-matched would return nothing
+   * here and nobody would notice until they searched a UTF-16 file for real.
+   */
+  const utf16Search = await runSearch({
+    pattern: 'beta',
+    caseSensitive: null,
+    wholeWord: false,
+    regex: false
+  })
+  const inUtf16 = utf16Search?.matches.filter((m) => String(m.file).includes('utf16')) ?? []
+  add(
+    'search decodes utf-16 rather than matching bytes',
+    inUtf16.length > 0,
+    inUtf16.length === 0
+      ? 'no utf-16 match — search is byte matching'
+      : `${inUtf16.length} in ${inUtf16.map((m) => m.file).join(', ')}`
+  )
+
+  /**
+   * A BOM must not shift the first column. If the three BOM bytes were left on
+   * the front, the first token of utf8-bom.txt would report column 4 and
+   * clicking the result would land the cursor in the wrong place.
+   */
+  const bomHit = utf16Search?.matches.find((m) => String(m.file) === 'fixtures/utf8-bom.txt')
+  const bomHitLf = literalSearch?.matches.find((m) => String(m.file) === 'fixtures/utf8-bom.txt')
+  const firstColumn = bomHit ?? bomHitLf
+  add(
+    'a byte-order mark does not shift the column',
+    firstColumn === undefined || Number(firstColumn.column) >= 1,
+    firstColumn === undefined ? 'no match in the bom fixture' : `column ${String(firstColumn.column)}`
+  )
+
+  const caseSearch = await runSearch({
+    pattern: 'ALPHA',
+    caseSensitive: null,
+    wholeWord: false,
+    regex: false
+  })
+  add(
+    'smart case makes an uppercase pattern sensitive',
+    caseSearch !== null && caseSearch.matches.length === 0,
+    caseSearch === null ? 'timed out' : `${caseSearch.matches.length} matches for ALPHA`
+  )
+
+  const badPattern = await runSearch({
+    pattern: '(',
+    caseSensitive: null,
+    wholeWord: false,
+    regex: true
+  })
+  add(
+    'an unfinished regex is refused, not silently empty',
+    badPattern !== null && badPattern.done.error !== undefined,
+    badPattern === null ? 'timed out' : JSON.stringify(badPattern.done.error ?? 'no error reported')
+  )
+
+  /**
+   * A pattern containing CR can never match, because the haystack is normalized
+   * to LF. On a machine where most files are CRLF, pasting two lines out of a
+   * browser and getting silence is a bug, so it is reported rather than hidden.
+   */
+  const crSearch = await runSearch({
+    pattern: 'alpha\r',
+    caseSensitive: null,
+    wholeWord: false,
+    regex: false
+  })
+  add(
+    'a carriage return in the pattern is stripped and reported',
+    crSearch !== null && crSearch.done.crStripped === true,
+    crSearch === null ? 'timed out' : `crStripped=${String(crSearch.done.crStripped)}`
+  )
+
   // ---- the sandbox must not be escapable --------------------------------
 
   const escape = await invoke<Err>('fs:read', { path: '../../../../../../etc/passwd' })

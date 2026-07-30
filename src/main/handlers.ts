@@ -8,13 +8,9 @@ import { loadSession, saveSession } from './session'
 import { sendToLanguageServer, startLanguageServer, stopLanguageServer } from './lsp'
 import { killPty, resizePty, startPty, writePty } from './pty'
 import { setWatchedFiles } from './watcher'
+import { cancelAllSearches, cancelSearch, startSearch } from './search'
+import { walkFiles, type WalkStats } from './walk'
 import type { DirEntry } from '../shared/files'
-
-/** Directories never worth walking or listing. */
-const SKIP = new Set([
-  '.git', 'node_modules', 'out', 'dist', '.vite', '.venv', '__pycache__',
-  'build', '.gradle', '.idea', 'target', 'vendor', '.next', 'coverage'
-])
 
 /** Quick-open stops here. A tree this size means the ignore list is wrong. */
 const WALK_LIMIT = 50_000
@@ -69,6 +65,7 @@ export function registerHandlers(): void {
     // pointed at the right project, rather than one quietly resolving imports
     // against a directory the user has left.
     stopLanguageServer()
+    cancelAllSearches()
 
     const root = await setWorkspaceRoot(picked)
     // Pushed as well as returned: the invoke result only reaches the caller,
@@ -139,28 +136,16 @@ export function registerHandlers(): void {
     const root = getWorkspaceRoot()
     if (root === null) return { files: [], truncated: false }
 
+    // The same walker search uses. Two implementations would drift, and the
+    // drift shows up as a file quick-open can find and search cannot.
+    const stats: WalkStats = { skippedDirs: 0 }
     const files: string[] = []
     let truncated = false
-    const queue = [root]
-
-    while (queue.length > 0 && !truncated) {
-      const directory = queue.shift()
-      if (directory === undefined) break
-      const dirents = await readdir(directory, { withFileTypes: true }).catch(() => [])
-      for (const dirent of dirents) {
-        if (dirent.name.startsWith('.') && dirent.isDirectory()) continue
-        if (SKIP.has(dirent.name)) continue
-        const full = join(directory, dirent.name)
-        // Symlinked directories are not followed: a link pointing at a parent
-        // turns the walk into an infinite loop.
-        if (dirent.isDirectory() && !dirent.isSymbolicLink()) queue.push(full)
-        else if (dirent.isFile()) {
-          files.push(relative(root, full).split(sep).join('/'))
-          if (files.length >= WALK_LIMIT) {
-            truncated = true
-            break
-          }
-        }
+    for await (const file of walkFiles(root, stats)) {
+      files.push(file)
+      if (files.length >= WALK_LIMIT) {
+        truncated = true
+        break
       }
     }
     return { files, truncated }
@@ -246,6 +231,13 @@ export function registerHandlers(): void {
 
   handle('watch:files', (request) => {
     setWatchedFiles(request.files)
+    return {}
+  })
+
+  handle('search:start', (request, event) => startSearch(request.query, event.sender))
+
+  handle('search:cancel', (request) => {
+    cancelSearch(request.id)
     return {}
   })
 

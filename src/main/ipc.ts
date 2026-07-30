@@ -1,5 +1,5 @@
 import { BrowserWindow, ipcMain } from 'electron'
-import type { IpcMainInvokeEvent } from 'electron'
+import type { IpcMainInvokeEvent, WebContents } from 'electron'
 import {
   IPC_CHANNELS,
   type IpcChannel,
@@ -20,6 +20,22 @@ export function emit<E extends IpcEvent>(event: E, payload: IpcEventPayload<E>):
   for (const window of BrowserWindow.getAllWindows()) {
     if (!window.isDestroyed()) window.webContents.send(event, payload)
   }
+}
+
+/**
+ * Push to one window rather than all of them.
+ *
+ * `emit` broadcasts, which is right for `workspace:changed` and wrong for a
+ * search: a second window would receive results for a query nobody in it typed,
+ * and filtering by id cannot save it, because the id is legitimate, just not
+ * theirs.
+ */
+export function emitTo<E extends IpcEvent>(
+  sender: WebContents,
+  event: E,
+  payload: IpcEventPayload<E>
+): void {
+  if (!sender.isDestroyed()) sender.send(event, payload)
 }
 
 type Handler<C extends IpcChannel> = (

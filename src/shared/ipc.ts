@@ -8,6 +8,7 @@
  * first time a user clicks the thing.
  */
 import type { DirEntry, FileMeta, ReadResult } from './files'
+import type { SearchDone, SearchMatch, SearchQuery } from './search'
 
 export type IpcContract = {
   /**
@@ -198,6 +199,30 @@ export type IpcContract = {
   }
 
   /**
+   * Start a search over the workspace. Returns the id every later message
+   * carries; answers arrive on `search:matches` and always end with
+   * `search:done`.
+   *
+   * Nothing useful can come back through this response. Reading a few thousand
+   * files takes hundreds of milliseconds, and one response means an empty panel
+   * for all of it and then everything at once.
+   *
+   * Starting a run cancels the one before it, so a renderer that forgets to
+   * cancel cannot leak one. Fails with BAD_PATTERN for a regex that will not
+   * compile, so a half-typed group reads as a message rather than as no results.
+   */
+  'search:start': {
+    request: { query: SearchQuery }
+    response: { id: string }
+  }
+
+  /** Stop a run. An id that already finished is ignored, as with pty:resize. */
+  'search:cancel': {
+    request: { id: string }
+    response: Record<string, never>
+  }
+
+  /**
    * Which files to watch for changes made outside the editor, and the mtime the
    * renderer believes each one currently has.
    *
@@ -267,6 +292,8 @@ export const IPC_CHANNELS = [
   'pty:write',
   'pty:resize',
   'pty:kill',
+  'search:start',
+  'search:cancel',
   'watch:files'
 ] as const
 
@@ -300,6 +327,22 @@ export type IpcEventContract = {
   'pty:data': { id: string; data: string }
   /** A shell exited, whether the user typed `exit` or it died. */
   'pty:exit': { id: string; code: number }
+  /**
+   * A batch of search matches, and how far the run has got.
+   *
+   * Batched because ten thousand matches would be ten thousand structured
+   * clones and ten thousand renderer wakeups to paint a list that cannot update
+   * faster than the screen. Sent empty as well, so a slow run with no hits still
+   * shows progress instead of looking hung.
+   */
+  'search:matches': { id: string; matches: SearchMatch[]; filesSearched: number }
+  /**
+   * A run ended. Always sent: on completion, on the match limit, on cancel and
+   * on a throw. A streaming contract with no guaranteed terminal event is the one
+   * shape that cannot be debugged from the UI, because a dead search and a slow
+   * one look identical.
+   */
+  'search:done': { id: string } & SearchDone
 }
 
 export type IpcEvent = keyof IpcEventContract & string
@@ -312,7 +355,9 @@ export const IPC_EVENTS = [
   'lsp:message',
   'lsp:status',
   'pty:data',
-  'pty:exit'
+  'pty:exit',
+  'search:matches',
+  'search:done'
 ] as const
 
 type MissingEvent = Exclude<IpcEvent, (typeof IPC_EVENTS)[number]>
