@@ -864,6 +864,41 @@ if (panelOpen === true) {
   )
 }
 
+/**
+ * Clicking the container you are already looking at closes the sidebar.
+ *
+ * The activity bar is the only way to close it with the mouse, and an icon that
+ * does nothing when the thing it opens is already open is a dead control.
+ */
+const clickContainer = (label) =>
+  evaluate(
+    `document.querySelector('nav[aria-label="views"] button[aria-label="${label}"]')?.click(), true`
+  )
+
+await clickContainer('search')
+await sleep(400)
+const closed = await evaluate(`
+  JSON.stringify({
+    panel: !!document.querySelector('nav[aria-label="search"] input'),
+    lit: !!document.querySelector('nav[aria-label="views"] [aria-current="page"]')
+  })
+`)
+const closedState = JSON.parse(String(closed ?? '{}'))
+add(
+  'clicking the open container closes the sidebar',
+  closedState.panel === false && closedState.lit === false,
+  `panel drawn: ${closedState.panel}, a container still lit: ${closedState.lit}`
+)
+
+await clickContainer('explorer')
+await sleep(400)
+const reopened = await evaluate(`!!document.querySelector('nav[aria-label="files"]')`)
+add(
+  'clicking another container opens it again',
+  reopened === true,
+  reopened === true ? 'the tree came back' : 'the sidebar stayed closed'
+)
+
 add('the renderer logged nothing', problems.length === 0, problems.slice(0, 3).join(' | ') || 'clean')
 
 /**

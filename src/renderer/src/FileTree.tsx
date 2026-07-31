@@ -235,6 +235,9 @@ export function FileTree({
   return (
     <nav
       ref={nav}
+      // Named, like the search panel next to it. Two unlabelled navigation
+      // landmarks in one window are indistinguishable to a screen reader.
+      aria-label="files"
       className="border-line bg-surface-1 relative flex h-full shrink-0 flex-col border-e"
       style={{ width: `${width}px` }}
     >

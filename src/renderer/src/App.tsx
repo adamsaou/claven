@@ -931,10 +931,19 @@ export default function App(): React.JSX.Element {
       <div className="flex min-h-0 flex-1">
         <ActivityBar
           containers={containers}
-          activeId={sidebarView}
+          // Nothing is lit while the sidebar is closed. An ember rail against a
+          // panel that is not on screen says the wrong thing.
+          activeId={sidebarVisible ? sidebarView : null}
           onSelect={(id) => {
+            const view = id === 'search' ? 'search' : 'explorer'
+            // Clicking the container you are already looking at closes the
+            // sidebar. Clicking a different one switches to it and opens it.
+            if (sidebarVisible && sidebarView === view) {
+              setSidebarVisible(false)
+              return
+            }
+            setSidebarView(view)
             setSidebarVisible(true)
-            setSidebarView(id === 'search' ? 'search' : 'explorer')
           }}
         />
         {sidebarVisible && (

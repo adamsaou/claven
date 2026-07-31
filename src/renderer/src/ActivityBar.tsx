@@ -11,7 +11,9 @@ export type Container = {
 
 type Props = {
   containers: Container[]
-  activeId: string
+  /** Null while the sidebar is closed, so no container reads as open. */
+  activeId: string | null
+  /** Called for every click, including on the container already showing. */
   onSelect: (id: string) => void
 }
 
