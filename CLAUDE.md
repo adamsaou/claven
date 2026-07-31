@@ -181,6 +181,53 @@ falsified that: localStorage is flushed to disk on Chromium's own schedule, so
 after a `SIGKILL` the window came back with its unsaved edits intact and its
 panes gone.
 
+### The terminal, and four things that were wrong in it
+
+Found on 2026-07-31 by reading node-pty and xterm's own source rather than by
+using the app. All four were invisible until they cost you something.
+
+**Output had no bound and no backpressure.** One `webContents.send` per chunk,
+which for a chatty command is thousands a second, each a structured clone and a
+renderer wakeup. `search:matches` had batched for exactly that reason since it
+was written; the terminal was the one streaming channel that did not. Worse,
+xterm's write buffer discards at 50 MB and throws while doing it, and its own
+source says it is typically unresponsive a hundred times below that. `git log -p`
+on a real repo gets there. Output is now coalesced on a 16 ms frame in main, and
+the renderer pauses the shell when unparsed output passes a megabyte, which is
+what node-pty's `pause` and `resume` are for and nothing was calling them.
+
+**A shell that ended took its pane with it.** The exit code and whatever the
+command printed before dying are usually the thing the terminal was open to
+read, and closing the pane threw both away along with the scrollback. The pane
+stays now and offers a fresh shell. Restarting bumps a generation in the
+surface's key, which is a deliberate remount of that one terminal.
+
+**Output emitted between spawn and subscribe was dropped.** Main attached its
+data listener the instant the process spawned; the renderer subscribed a full
+IPC round trip later. For output that is a missing first prompt. For an exit it
+is worse: the pane stays looking alive and silently swallows every keystroke,
+because the message that would have said otherwise is the one that was lost. The
+renderer subscribes first now and replays what arrived before it knew the id.
+
+**Quitting orphaned the shell's children on Windows.** node-pty ends a conpty's
+children by forking a helper and killing them when it answers, which takes tens
+of milliseconds; a synchronous quit is long gone. Classic symptom: a dev server
+outliving the editor, still holding its port, and nothing on screen explaining
+the next `EADDRINUSE`. The quit is deferred once and waits.
+
+Two smaller ones with it: nothing listened for `error` on the pty socket, and
+node-pty rethrows when nobody does, which in main is an uncaught exception that
+takes the editor and every unsaved buffer with it. And shell output went through
+`emit`, which broadcasts to every window. Both fixed.
+
+**Still open, and deliberately so.** No shell picker: Windows is hardcoded to
+PowerShell, and the drive suite types PowerShell at it, so changing the default
+is a decision with test consequences rather than a tidy-up. No clickable paths or
+URLs, no scrollback search, no renderer addon. Every one of those needs a new
+`@xterm` dependency: the only addon installed is `addon-fit`. Note for whoever
+adds one: `@xterm/addon-webgl` deletes the `.xterm-rows` element that four drive
+checks read, so it is not a free swap.
+
 ### Licensing — read before touching the license or accepting a PR
 
 The plan is to sell this eventually. Two things follow, and they pull opposite ways.

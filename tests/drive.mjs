@@ -723,6 +723,84 @@ add(
 )
 
 /**
+ * A shell that ends must not take the pane with it.
+ *
+ * Closing the pane on exit was the old behaviour, and it threw away the exit
+ * code and the scrollback: the stack trace you opened the terminal to read went
+ * with them, and there was no way to get it back. The pane now stays, says what
+ * happened, and offers a fresh shell.
+ *
+ * Driven on terminal 2, because terminal 1 is running the heartbeat the layout
+ * checks above depend on.
+ */
+const terminalPaneCount = () =>
+  evaluate(`document.querySelectorAll('[data-pane-kind="terminals"]').length`)
+
+const panesBeforeExit = await terminalPaneCount()
+await evaluate(`
+  (() => {
+    const tabs = Array.from(document.querySelectorAll('[data-pane-kind="terminals"] [data-tab]'))
+    const last = tabs[tabs.length - 1]
+    last?.querySelector('button')?.click()
+    return true
+  })()
+`)
+await sleep(500)
+await typeIntoTerminal(1, 'exit')
+
+let survivedExit = null
+for (let i = 0; i < 20 && survivedExit === null; i += 1) {
+  await sleep(700)
+  const state = await evaluate(`
+    JSON.stringify({
+      panes: document.querySelectorAll('[data-pane-kind="terminals"]').length,
+      exitNotice: Array.from(document.querySelectorAll('.xterm-rows'))
+        .some((rows) => /process exited with code/.test(rows.innerText)),
+      restart: !!document.querySelector('[aria-label="restart terminal"]')
+    })
+  `)
+  const parsed = JSON.parse(String(state ?? '{}'))
+  if (parsed.exitNotice === true) survivedExit = parsed
+}
+
+add(
+  'a shell that exits leaves its pane and its output behind',
+  survivedExit !== null && survivedExit.panes === panesBeforeExit,
+  survivedExit === null
+    ? 'no exit notice ever appeared'
+    : `${survivedExit.panes} terminal pane(s), was ${panesBeforeExit}, exit notice shown`
+)
+
+add(
+  'an exited terminal offers a restart',
+  survivedExit !== null && survivedExit.restart === true,
+  survivedExit?.restart === true ? 'restart control rendered' : 'no way to start another shell'
+)
+
+const shellsBeforeRestart = await evaluate(`document.querySelectorAll('.xterm-screen').length`)
+await evaluate(`document.querySelector('[aria-label="restart terminal"]')?.click(), true`)
+let restarted = null
+for (let i = 0; i < 20 && restarted === null; i += 1) {
+  await sleep(700)
+  const gone = await evaluate(`
+    JSON.stringify({
+      shells: document.querySelectorAll('.xterm-screen').length,
+      stale: Array.from(document.querySelectorAll('.xterm-rows'))
+        .some((rows) => /process exited with code/.test(rows.innerText))
+    })
+  `)
+  const parsed = JSON.parse(String(gone ?? '{}'))
+  if (parsed.stale === false) restarted = parsed
+}
+add(
+  'restarting gives a fresh shell in the same pane',
+  restarted !== null && restarted.shells === shellsBeforeRestart,
+  restarted === null
+    ? 'the exited terminal was never replaced'
+    : `${restarted.shells} shell(s), was ${shellsBeforeRestart}, buffer cleared`
+)
+
+/**
  * Editor panes split and take files the same way terminal panes do.
  *
  * The interesting part is not that a second pane appears, it is that the file

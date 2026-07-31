@@ -38,6 +38,8 @@ export type TabView = {
    * terminal's label is a bare number and "close 1" describes nothing.
    */
   closeLabel: string
+  /** A terminal whose shell has ended. Drawn dimmed, and offers a restart. */
+  exited?: boolean
 }
 
 export type Drag = { kind: PaneKind; item: string }
@@ -55,6 +57,8 @@ type Props = {
   onSelectTab: (kind: PaneKind, item: string) => void
   onCloseTab: (kind: PaneKind, item: string) => void
   onAddTerminal: (paneId: string) => void
+  /** Start a fresh shell in place of one that ended. */
+  onRestartTerminal: (item: string) => void
   onMoveItem: (kind: PaneKind, item: string, target: { paneId: string; edge: Edge | 'center' }) => void
   onDragging: (active: boolean) => void
 }
@@ -183,6 +187,11 @@ export function Workbench(props: Props): React.JSX.Element {
           onSelect={(item) => props.onSelectTab(kind, item)}
           onClose={(item) => props.onCloseTab(kind, item)}
           onAdd={isEditors ? undefined : () => props.onAddTerminal(pane.id)}
+          onRestart={
+            isEditors || pane.content.active === null
+              ? undefined
+              : () => props.onRestartTerminal(String(pane.content.active))
+          }
           onDragStart={(item) => setDragging({ kind, item })}
           onDragEnd={() => setDragging(null)}
         />
@@ -302,6 +311,7 @@ function TabStrip({
   onSelect,
   onClose,
   onAdd,
+  onRestart,
   onDragStart,
   onDragEnd
 }: {
@@ -311,6 +321,7 @@ function TabStrip({
   onSelect: (item: string) => void
   onClose: (item: string) => void
   onAdd?: (() => void) | undefined
+  onRestart?: (() => void) | undefined
   onDragStart: (item: string) => void
   onDragEnd: () => void
 }): React.JSX.Element {
@@ -337,7 +348,7 @@ function TabStrip({
               data-tab={tab.key}
               className={`group border-line relative flex shrink-0 cursor-grab items-center gap-2 border-e ps-3 pe-2 transition-colors ${
                 isActive ? 'bg-obsidian text-ink' : 'text-ink-muted hover:bg-surface-2'
-              }`}
+              } ${tab.exited === true ? 'opacity-50' : ''}`}
               style={{ transitionDuration: 'var(--dur-micro)' }}
             >
               {/* Ember as the active indicator, per BRAND.md. Dimmed in a pane
@@ -376,6 +387,17 @@ function TabStrip({
             </div>
           )
         })}
+        {onRestart !== undefined && tabs.some((tab) => tab.exited === true) && (
+          <button
+            onClick={onRestart}
+            aria-label="restart terminal"
+            title="the shell ended. start another"
+            className="text-ink-dim hover:text-ember shrink-0 px-3 text-sm transition-colors"
+            style={{ transitionDuration: 'var(--dur-micro)' }}
+          >
+            &#10227;
+          </button>
+        )}
         {onAdd !== undefined && (
           <button
             onClick={onAdd}

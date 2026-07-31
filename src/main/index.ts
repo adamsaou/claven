@@ -2,7 +2,7 @@ import { app, shell, dialog, BrowserWindow, Menu } from 'electron'
 import { join } from 'node:path'
 import { registerHandlers, getDirtyCount } from './handlers'
 import { stopLanguageServer } from './lsp'
-import { killAllPtys } from './pty'
+import { killAllPtys, killPtysFor, livePtyCount } from './pty'
 import { stopWatching } from './watcher'
 import { cancelAllSearches } from './search'
 
@@ -108,6 +108,15 @@ function createWindow(): BrowserWindow {
     if (!allowed || !url.startsWith(allowed)) event.preventDefault()
   })
 
+  // A window's shells belong to that window. Closing it takes them with it,
+  // rather than leaving shells whose output has nowhere to go.
+  //
+  // The reference is captured now rather than read in the handler: by the time
+  // `closed` fires the window is destroyed and reaching for `webContents`
+  // throws.
+  const contents = window.webContents
+  window.on('closed', () => killPtysFor(contents))
+
   if (isDev && process.env.ELECTRON_RENDERER_URL) {
     void window.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else {
@@ -169,22 +178,36 @@ if (!isSmokeRun && !app.requestSingleInstanceLock()) {
     }
   })
 
-  // An orphaned language server is a few hundred megabytes held by a process
-  // with nothing left to serve, and on Windows it outlives the app happily.
-  app.on('before-quit', () => {
+  /**
+   * An orphaned language server is a few hundred megabytes held by a process
+   * with nothing left to serve, and on Windows it outlives the app happily.
+   *
+   * The quit is deferred once, so the shells actually get killed. On Windows
+   * node-pty ends a conpty's children by forking a helper and killing them when
+   * it answers, which takes tens of milliseconds; a synchronous quit is gone
+   * before that lands. The symptom is a dev server outliving the editor, still
+   * holding its port, with nothing on screen to explain the next EADDRINUSE.
+   */
+  let shuttingDown = false
+  app.on('before-quit', (event) => {
     stopLanguageServer()
-    killAllPtys()
     stopWatching()
     cancelAllSearches()
+    if (shuttingDown || livePtyCount() === 0) return
+    shuttingDown = true
+    event.preventDefault()
+    void killAllPtys().then(() => app.quit())
   })
 
   app.on('window-all-closed', () => {
     stopLanguageServer()
-    killAllPtys()
     stopWatching()
     cancelAllSearches()
     // macOS convention is to stay alive with no windows; everywhere else quits.
+    // The shells are killed by the before-quit above rather than here, so the
+    // wait happens once and in one place.
     if (process.platform !== 'darwin') app.quit()
+    else void killAllPtys()
   })
 }
 

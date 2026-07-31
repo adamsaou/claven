@@ -40,7 +40,11 @@ const THEME = {
 type Props = {
   /** Hidden rather than unmounted, so scrollback and shell state survive a toggle. */
   visible: boolean
-  onExit: () => void
+  /**
+   * The shell ended. Called with its exit code, or -1 if it never started.
+   * The pane is expected to stay: this reports, it does not close.
+   */
+  onExit: (code: number) => void
 }
 
 export function TerminalView({ visible, onExit }: Props): React.JSX.Element {
@@ -124,6 +128,71 @@ export function TerminalView({ visible, onExit }: Props): React.JSX.Element {
       pending.observe(element)
     })
 
+    /**
+     * Subscribed before the shell is started, not after.
+     *
+     * `pty:start` is a full IPC round trip, and main attaches its own data
+     * listener the instant the process spawns. Anything the shell said in
+     * between used to be sent to a channel nobody was listening on and dropped.
+     * For output that means a missing first prompt. For an exit it means the
+     * pane stays, looking alive, silently swallowing every keystroke, because
+     * the exit that would have told it otherwise was the message that got lost.
+     *
+     * The id is not known yet, so everything is held and replayed once it is.
+     */
+    let attached: string | null = null
+    const early: Array<{ id: string; data: string }> = []
+    const earlyExit: { missed: { id: string; code: number } | null } = { missed: null }
+
+    /**
+     * Flow control.
+     *
+     * xterm's write buffer discards at 50 MB and throws while doing it, and its
+     * own source notes it is typically unresponsive a hundred times below that.
+     * `git log -p` on a real repo gets there. So the shell is paused once
+     * enough unparsed output has piled up and resumed when it drains, which is
+     * what node-pty's pause and resume are for.
+     */
+    let outstanding = 0
+    let paused = false
+    const HIGH_WATER = 1_000_000
+    const LOW_WATER = 200_000
+
+    const consume = (id: string, data: string): void => {
+      outstanding += data.length
+      if (!paused && outstanding > HIGH_WATER) {
+        paused = true
+        void window.claven.invoke('pty:setPaused', { id, paused: true })
+      }
+      terminal.write(data, () => {
+        outstanding -= data.length
+        if (paused && outstanding < LOW_WATER) {
+          paused = false
+          void window.claven.invoke('pty:setPaused', { id, paused: false })
+        }
+      })
+    }
+
+    const finish = (code: number): void => {
+      sessionId.current = null
+      // The pane stays. The exit code and whatever the command printed before
+      // dying are usually the thing the terminal was open to read, and closing
+      // the pane threw both away along with the scrollback.
+      terminal.writeln(`\r\n\x1b[90m[process exited with code ${code}]\x1b[0m`)
+      latestExit.current(code)
+    }
+
+    unsubscribers.push(
+      window.claven.subscribe('pty:data', (payload) => {
+        if (attached === null) early.push(payload)
+        else if (payload.id === attached) consume(attached, payload.data)
+      }),
+      window.claven.subscribe('pty:exit', (payload) => {
+        if (attached === null) earlyExit.missed = payload
+        else if (payload.id === attached) finish(payload.code)
+      })
+    )
+
     void (async () => {
       await sized
       if (disposed) return
@@ -136,6 +205,10 @@ export function TerminalView({ visible, onExit }: Props): React.JSX.Element {
       })
       if (!started.ok) {
         terminal.writeln(`\x1b[31mcould not start a shell: ${started.error.message}\x1b[0m`)
+        // Reported as an exit rather than left as a dead pane. The pane keeps
+        // the message and offers a restart, which is the only way out of a
+        // shell that failed to spawn.
+        latestExit.current(-1)
         return
       }
       if (disposed) {
@@ -144,22 +217,18 @@ export function TerminalView({ visible, onExit }: Props): React.JSX.Element {
       }
       const id = started.value.id
       sessionId.current = id
+      attached = id
 
-      unsubscribers.push(
-        window.claven.subscribe('pty:data', (payload) => {
-          if (payload.id === id) terminal.write(payload.data)
-        }),
-        window.claven.subscribe('pty:exit', (payload) => {
-          if (payload.id !== id) return
-          sessionId.current = null
-          terminal.writeln(`\r\n\x1b[90m[process exited with code ${payload.code}]\x1b[0m`)
-          latestExit.current()
-        })
-      )
+      for (const payload of early) {
+        if (payload.id === id) consume(id, payload.data)
+      }
+      early.length = 0
 
       terminal.onData((data) => {
         void window.claven.invoke('pty:write', { id, data })
       })
+
+      if (earlyExit.missed !== null && earlyExit.missed.id === id) finish(earlyExit.missed.code)
     })()
 
     return () => {

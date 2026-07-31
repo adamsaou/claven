@@ -6,7 +6,7 @@ import { getWorkspaceRoot, resolveInsideWorkspace, setWorkspaceRoot } from './wo
 import { readTextFile, writeTextFile } from './textfile'
 import { loadSession, saveSession } from './session'
 import { sendToLanguageServer, startLanguageServer, stopLanguageServer } from './lsp'
-import { killPty, resizePty, startPty, writePty } from './pty'
+import { killPty, resizePty, setPtyPaused, startPty, writePty } from './pty'
 import { setWatchedFiles } from './watcher'
 import { restoreBuffers, syncBuffers } from './buffers'
 import { cancelAllSearches, cancelSearch, startSearch } from './search'
@@ -213,7 +213,10 @@ export function registerHandlers(): void {
     return {}
   })
 
-  handle('pty:start', (request) => startPty(request.cols, request.rows))
+  // The sender is passed through so a shell's output goes to the window that
+  // asked for it. `emit` broadcasts, and the contents of your shell is not
+  // something to send to every window that happens to be open.
+  handle('pty:start', (request, event) => startPty(request.cols, request.rows, event.sender))
 
   handle('pty:write', (request) => {
     writePty(request.id, request.data)
@@ -227,6 +230,11 @@ export function registerHandlers(): void {
 
   handle('pty:kill', (request) => {
     killPty(request.id)
+    return {}
+  })
+
+  handle('pty:setPaused', (request) => {
+    setPtyPaused(request.id, request.paused)
     return {}
   })
 

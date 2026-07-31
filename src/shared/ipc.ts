@@ -200,6 +200,21 @@ export type IpcContract = {
   }
 
   /**
+   * Flow control. The renderer tells main to stop reading the shell while it
+   * works through what it already has.
+   *
+   * Without it a command that prints fast wins the race outright. xterm's write
+   * buffer discards at 50 MB and throws while doing it, and its own source
+   * notes it is typically unresponsive a hundred times below that. `git log -p`
+   * on a real repo gets there. node-pty ships pause and resume for exactly
+   * this, and nothing was calling them.
+   */
+  'pty:setPaused': {
+    request: { id: string; paused: boolean }
+    response: Record<string, never>
+  }
+
+  /**
    * Start a search over the workspace. Returns the id every later message
    * carries; answers arrive on `search:matches` and always end with
    * `search:done`.
@@ -324,6 +339,7 @@ export const IPC_CHANNELS = [
   'pty:write',
   'pty:resize',
   'pty:kill',
+  'pty:setPaused',
   'search:start',
   'search:cancel',
   'buffer:sync',
@@ -360,6 +376,11 @@ export type IpcEventContract = {
   /** Output from a shell. Arrives whenever the shell feels like it. */
   'pty:data': { id: string; data: string }
   /** A shell exited, whether the user typed `exit` or it died. */
+  /**
+   * The shell ended. The pane stays: the exit code and whatever the command
+   * printed before dying are usually the thing you opened the terminal to read,
+   * and closing the pane on exit threw both away.
+   */
   'pty:exit': { id: string; code: number }
   /**
    * A batch of search matches, and how far the run has got.

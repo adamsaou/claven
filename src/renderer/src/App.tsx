@@ -79,6 +79,17 @@ export default function App(): React.JSX.Element {
   const layout = useLayout()
   const [paneRects, setPaneRects] = useState<Record<string, Rect>>({})
   const [dragActive, setDragActive] = useState(false)
+  /**
+   * Terminals whose shell has ended, and how many times each has been restarted.
+   *
+   * A dead shell used to close its pane on the spot, taking the scrollback and
+   * the exit code with it. The stack trace you opened the terminal to read went
+   * with them. So the pane stays, says what happened, and offers to start
+   * another shell. Restarting bumps the generation, which changes the surface's
+   * key, which is a deliberate remount: a new shell needs a new xterm.
+   */
+  const [exitedTerminals, setExitedTerminals] = useState<Record<string, number>>({})
+  const [terminalGeneration, setTerminalGeneration] = useState<Record<string, number>>({})
   const [sidebarView, setSidebarView] = useState<'explorer' | 'search'>('explorer')
   /**
    * Where to put the cursor after opening a file from a search result. The nonce
@@ -888,10 +899,13 @@ export default function App(): React.JSX.Element {
         })
       : pane.content.items.map((key) => {
           const number = layout.terminalOrder.indexOf(key) + 1
+          const code = exitedTerminals[key]
           return {
             key,
             label: String(number),
             closeLabel: `close terminal ${number}`,
+            exited: code !== undefined,
+            title: code === undefined ? undefined : `shell exited with code ${code}`,
             icon: <Icon name="terminal" size={12} className="shrink-0 opacity-80" />
           }
         })
@@ -967,11 +981,28 @@ export default function App(): React.JSX.Element {
     }
   })
 
+  const restartTerminal = (key: string): void => {
+    setExitedTerminals((current) => {
+      const next = { ...current }
+      delete next[key]
+      return next
+    })
+    setTerminalGeneration((current) => ({ ...current, [key]: (current[key] ?? 0) + 1 }))
+  }
+
   const terminalSurfaces: Surface[] = layout.terminalSlots.map((slot) => ({
-    key: slot.key,
+    // The generation is part of the key on purpose: bumping it remounts this
+    // one terminal, which is how a restart gets a fresh shell. It never
+    // reorders the list, so no other surface moves in the DOM.
+    key: `${slot.key}#${terminalGeneration[slot.key] ?? 0}`,
     paneId: slot.paneId,
     visible: slot.visible,
-    node: <TerminalView visible={slot.visible} onExit={() => layout.closeTerminal(slot.key)} />
+    node: (
+      <TerminalView
+        visible={slot.visible}
+        onExit={(code) => setExitedTerminals((current) => ({ ...current, [slot.key]: code }))}
+      />
+    )
   }))
 
   return (
@@ -1068,6 +1099,7 @@ export default function App(): React.JSX.Element {
                 kind === 'editors' ? void closeTab(item) : layout.closeTerminal(item)
               }
               onAddTerminal={layout.addTerminalTo}
+              onRestartTerminal={restartTerminal}
               onMoveItem={layout.moveItemTo}
             />
 
