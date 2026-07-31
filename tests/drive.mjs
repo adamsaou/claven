@@ -488,26 +488,29 @@ for (let i = 0; i < 20 && !terminalPresent; i += 1) {
 }
 add('ctrl+j opens a terminal', terminalPresent, terminalPresent ? 'xterm mounted' : 'no terminal appeared')
 
-let shellOutput = null
-if (terminalPresent) {
-  // Wait for a prompt before typing, or the keystrokes go to a shell that has
-  // not finished starting and are silently dropped.
-  await sleep(2500)
-  await evaluate(`document.querySelector('.xterm-helper-textarea')?.focus(), true`)
-  await send('Input.insertText', { text: 'echo CLAVEN_TERMINAL_WORKS' })
+/**
+ * Type a command into one terminal and press Enter.
+ *
+ * Enter is dispatched inside the page rather than through CDP. xterm decides
+ * what to send the shell from `keyCode` on the keydown event. A `\r` inside
+ * inserted text never produces a keydown at all, and CDP's own key events did
+ * not produce one xterm recognised as Enter, so the command just sat on the
+ * prompt line unsent.
+ *
+ * Terminals are addressed by index rather than by what is on their screen, so
+ * that every caller drives one exactly the same way. When one of these checks
+ * passes and another fails, the difference then has to be the terminal rather
+ * than the typing.
+ */
+const typeIntoTerminal = async (index, command) => {
+  await evaluate(`document.querySelectorAll('.xterm-helper-textarea')[${index}]?.focus(), true`)
+  await sleep(300)
+  await send('Input.insertText', { text: command })
   await sleep(400)
-  /**
-   * Enter is dispatched inside the page rather than through CDP.
-   *
-   * xterm decides what to send the shell from `keyCode` on the keydown event.
-   * A `\r` inside inserted text never produces a keydown at all, and CDP's own
-   * key events did not produce one xterm recognised as Enter, so the command
-   * just sat on the prompt line unsent.
-   */
-  await evaluate(`
+  return await evaluate(`
     (() => {
-      const target = document.querySelector('.xterm-helper-textarea')
-      if (target === null) return false
+      const target = document.querySelectorAll('.xterm-helper-textarea')[${index}]
+      if (target === undefined) return false
       const event = new KeyboardEvent('keydown', {
         key: 'Enter', code: 'Enter', bubbles: true, cancelable: true
       })
@@ -517,6 +520,29 @@ if (terminalPresent) {
       return true
     })()
   `)
+}
+
+let shellOutput = null
+if (terminalPresent) {
+  // Wait for a prompt before typing, or the keystrokes go to a shell that has
+  // not finished starting and are silently dropped.
+  await sleep(2500)
+  /**
+   * One command, doing two jobs, because the harness only gets one.
+   *
+   * `Input.insertText` reliably reaches a terminal the first time and reliably
+   * does not the second: the text lands in xterm's hidden textarea and is never
+   * consumed. That is CDP and xterm disagreeing about how typed text arrives,
+   * not anything Claven does, and it is not worth working around twice.
+   *
+   * So the marker the check below looks for and the counter the layout checks
+   * need both come from this one line. The sleep keeps the counter quiet until
+   * the marker has been read, so its output cannot scroll the marker away.
+   */
+  await typeIntoTerminal(
+    0,
+    'echo CLAVEN_TERMINAL_WORKS; Start-Sleep 3; 1..600 | % { "CLAVENHB$_"; Start-Sleep 1 }'
+  )
   for (let i = 0; i < 25 && shellOutput === null; i += 1) {
     await sleep(700)
     const screen = await evaluate(
@@ -533,6 +559,26 @@ add(
   shellOutput !== null,
   shellOutput ?? `no output. rows were: ${JSON.stringify((await evaluate(`document.querySelector('.xterm-rows')?.innerText ?? ''`) ?? '').replace(/\s+/g, ' ').slice(0, 160))}`
 )
+
+/**
+ * The first shell is now talking to itself, one line a second.
+ *
+ * The layout checks need to know whether a moved terminal's shell is still the
+ * same live process. Typing at it afterwards would be testing xterm's keyboard
+ * handling as much as anything else, so instead it says something on its own:
+ * if the number is still climbing after the pane has been dragged across the
+ * window, nothing behind it was restarted.
+ */
+const heartbeat = async () => {
+  // Whitespace stripped first: the pane ends up a third of the window wide, and
+  // a wrap would otherwise split a marker across two lines and hide it.
+  const screens = await evaluate(`
+    Array.from(document.querySelectorAll('.xterm-rows'))
+      .map((n) => n.innerText).join(' ').replace(/\\s+/g, '')
+  `)
+  const seen = String(screens ?? '').match(/CLAVENHB(\d+)/g) ?? []
+  return seen.reduce((highest, hit) => Math.max(highest, Number(hit.slice(8))), 0)
+}
 
 /**
  * A second terminal is a second shell, not a second view of the first.
@@ -559,6 +605,152 @@ const firstTabButtons = await evaluate(
   `document.querySelectorAll('[aria-label^="close terminal"]').length`
 )
 add('each terminal has its own close control', firstTabButtons === 2, `${firstTabButtons} close buttons`)
+
+/**
+ * The claim the split layout exists to make: a terminal can be moved without
+ * being restarted.
+ *
+ * React unmounts a component when it moves to a different parent, and an
+ * unmounted TerminalView kills its shell. So this is not a cosmetic check.
+ * A layout where dragging a terminal silently restarts it is worse than no
+ * dragging at all, and the failure is invisible in a screenshot: the pane
+ * arrives in the right place, with a fresh prompt and your build gone.
+ *
+ * Dispatched as real DragEvents in the page rather than through CDP's drag
+ * interception, which needs Input.setInterceptDrags and gives no more coverage
+ * of our own handlers than this does.
+ */
+const paneKinds = async () =>
+  (await evaluate(
+    `Array.from(document.querySelectorAll('[data-pane]')).map((n) => n.dataset.paneKind)`
+  )) ?? []
+
+const editorPaneId = await evaluate(
+  `document.querySelector('[data-pane-kind="editor"]')?.dataset.pane ?? null`
+)
+const panesBefore = await paneKinds()
+
+const draggedKey = await evaluate(`
+  (() => {
+    const tab = document.querySelector('[data-terminal-tab]')
+    if (tab === null) return null
+    tab.dispatchEvent(new DragEvent('dragstart', {
+      bubbles: true, cancelable: true, dataTransfer: new DataTransfer()
+    }))
+    return tab.dataset.terminalTab
+  })()
+`)
+await sleep(400)
+
+// Four percent in from the left edge, which is inside the 25% band that means
+// "split here" rather than "add a tab".
+const droppedOn = await evaluate(`
+  (() => {
+    const zone = document.querySelector('[data-drop-pane="${editorPaneId}"]')
+    if (zone === null) return null
+    const box = zone.getBoundingClientRect()
+    const at = {
+      bubbles: true, cancelable: true, dataTransfer: new DataTransfer(),
+      clientX: Math.round(box.left + box.width * 0.04),
+      clientY: Math.round(box.top + box.height / 2)
+    }
+    zone.dispatchEvent(new DragEvent('dragover', at))
+    zone.dispatchEvent(new DragEvent('drop', at))
+    return true
+  })()
+`)
+await sleep(700)
+
+const panesAfter = await paneKinds()
+add(
+  'dragging a terminal to an edge splits the pane it landed on',
+  droppedOn === true && panesAfter.length === panesBefore.length + 1,
+  `${panesBefore.length} panes before, ${panesAfter.length} after (${panesAfter.join(', ')})`
+)
+
+// Asserted against where the boxes actually are, not against the serialised
+// tree. A layout that stores correctly and draws in the wrong place is broken,
+// and only one of those two things is what anyone looks at.
+const beside = await evaluate(`
+  (() => {
+    const editor = document.querySelector('[data-pane-kind="editor"]')
+    const terminal = document.querySelector('[data-pane-kind="terminals"]')
+    if (editor === null || terminal === null) return null
+    const a = editor.getBoundingClientRect()
+    const b = terminal.getBoundingClientRect()
+    return { leftOf: b.right <= a.left + 2, sharesRows: b.top < a.bottom && a.top < b.bottom }
+  })()
+`)
+add(
+  'the terminal ends up beside the editor, not under it',
+  beside !== null && beside.leftOf === true && beside.sharesRows === true,
+  beside === null ? 'panes not found' : `left of editor: ${beside.leftOf}, same rows: ${beside.sharesRows}`
+)
+
+// Nothing was unmounted: the counter started before the drag is still on
+// screen. A terminal that was torn down and rebuilt would have come back with
+// an empty buffer and a fresh prompt.
+let beatsAfterMove = 0
+for (let i = 0; i < 20 && beatsAfterMove === 0; i += 1) {
+  await sleep(700)
+  beatsAfterMove = await heartbeat()
+}
+add(
+  'the moved terminal keeps what was on it',
+  beatsAfterMove > 0,
+  beatsAfterMove > 0 ? `still counting, at ${beatsAfterMove}` : 'the buffer was empty after the move'
+)
+
+// And the shell behind it is still the same live process, not a corpse still
+// painted on screen. Nothing is typed at it: the counter either advances on its
+// own or the process is gone.
+await sleep(4000)
+const beatsLater = await heartbeat()
+add(
+  'the shell behind a moved terminal is still running',
+  beatsAfterMove > 0 && beatsLater > beatsAfterMove,
+  `counter went ${beatsAfterMove} -> ${beatsLater} across four seconds`
+)
+
+/**
+ * Ctrl+J hides terminals. It must not close them.
+ *
+ * With panes free to sit anywhere there is no "panel" left to toggle, so the
+ * shortcut means "off screen" instead. If it quietly killed the shells, the
+ * long-running thing you pressed it to get out of the way of would be the exact
+ * thing it destroyed.
+ */
+const pressToggle = async () => {
+  await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', modifiers: 2, key: 'j', code: 'KeyJ', windowsVirtualKeyCode: 74, nativeVirtualKeyCode: 74 })
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', modifiers: 2, key: 'j', code: 'KeyJ', windowsVirtualKeyCode: 74, nativeVirtualKeyCode: 74 })
+  await sleep(700)
+}
+
+await pressToggle()
+const whileHidden = await evaluate(`
+  JSON.stringify({
+    panes: document.querySelectorAll('[data-pane-kind="terminals"]').length,
+    shells: document.querySelectorAll('.xterm-screen').length
+  })
+`)
+const hiddenState = JSON.parse(String(whileHidden ?? '{}'))
+add(
+  'ctrl+j takes terminals off screen without closing them',
+  hiddenState.panes === 0 && hiddenState.shells === 2,
+  `${hiddenState.panes} terminal pane(s) drawn, ${hiddenState.shells} shell(s) still mounted`
+)
+
+await pressToggle()
+let beatsAfterHiding = 0
+for (let i = 0; i < 20 && beatsAfterHiding <= beatsLater; i += 1) {
+  await sleep(700)
+  beatsAfterHiding = await heartbeat()
+}
+add(
+  'a hidden terminal was still running while it was away',
+  beatsAfterHiding > beatsLater,
+  `counter reached ${beatsAfterHiding}, up from ${beatsLater}`
+)
 
 /**
  * An external change to an open file.
@@ -708,6 +900,8 @@ for (let i = 0; i < 60 && secondPage === null; i += 1) {
 }
 
 let survived = null
+let restoredPanes = 0
+let restoredShells = 0
 if (secondPage !== null) {
   const socket2 = new WebSocket(secondPage.webSocketDebuggerUrl)
   await new Promise((resolve) => socket2.addEventListener('open', resolve))
@@ -745,6 +939,18 @@ if (secondPage !== null) {
       survived = shown.slice(0, 40)
     }
   }
+  // The layout is chrome, so losing it is survivable, but it is also the thing
+  // you spent a minute arranging. It comes back with fresh shells in the panes
+  // they were in.
+  for (let i = 0; i < 30 && restoredPanes < 3; i += 1) {
+    await sleep(500)
+    restoredPanes = (await evaluate2(`document.querySelectorAll('[data-pane]').length`)) ?? 0
+  }
+  for (let i = 0; i < 30 && restoredShells < 2; i += 1) {
+    await sleep(500)
+    restoredShells = (await evaluate2(`document.querySelectorAll('.xterm-screen').length`)) ?? 0
+  }
+
   socket2.close()
 }
 second.kill()
@@ -753,6 +959,18 @@ add(
   'unsaved edits survive being killed',
   survived !== null,
   survived ?? 'the edit was gone after the restart'
+)
+
+add(
+  'the layout comes back after a restart',
+  restoredPanes === 3,
+  `${restoredPanes} panes restored`
+)
+
+add(
+  'restored terminal panes get their shells back',
+  restoredShells === 2,
+  `${restoredShells} shell(s) started`
 )
 
 let failures = 0

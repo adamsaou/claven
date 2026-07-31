@@ -65,6 +65,30 @@ export function TerminalView({ visible, onExit }: Props): React.JSX.Element {
       scrollback: 5000,
       allowProposedApi: true
     })
+    /**
+     * Let the window's own shortcuts out of the terminal.
+     *
+     * xterm calls `stopPropagation` on any key it handles, and it handles every
+     * control character. `Ctrl+J` is one of them, so with the terminal focused
+     * it went to the shell as a line feed and the shortcut that hides the
+     * terminal did nothing from inside the terminal. Which is the one place you
+     * would press it.
+     *
+     * Returning false tells xterm to leave the event alone, so it bubbles to
+     * the window listener. Kept to the shortcuts that only move panels and
+     * focus around. Anything with a real meaning at a prompt stays the shell's:
+     * Ctrl+C is an interrupt, Ctrl+W deletes a word, Ctrl+S freezes output, and
+     * an editor that quietly ate those would be worse than one with no
+     * shortcuts at all.
+     */
+    terminal.attachCustomKeyEventHandler((event) => {
+      if (event.type !== 'keydown') return true
+      if (!event.ctrlKey && !event.metaKey) return true
+      const key = event.key.toLowerCase()
+      if (event.shiftKey) return key !== 'p' && key !== 'f'
+      return key !== 'j' && key !== 'b' && key !== 'p'
+    })
+
     const fitAddon = new FitAddon()
     terminal.loadAddon(fitAddon)
     terminal.open(host.current)
@@ -73,8 +97,36 @@ export function TerminalView({ visible, onExit }: Props): React.JSX.Element {
 
     let disposed = false
     const unsubscribers: Array<() => void> = []
+    let pending: ResizeObserver | null = null
+
+    /**
+     * Do not start a shell into a box that has not been laid out yet.
+     *
+     * Fitting a zero-sized element makes xterm one column by one row, and the
+     * shell then prints its first prompt one character wide. Resizing it
+     * afterwards does not redraw what it already printed, so you are left
+     * looking at `PS >` and wondering what happened. Panes are measured a frame
+     * after they mount, so this is the normal case now, not a slow-machine one.
+     */
+    const sized = new Promise<void>((resolve) => {
+      const element = host.current
+      if (element === null) return
+      if (element.offsetWidth > 0 && element.offsetHeight > 0) {
+        resolve()
+        return
+      }
+      pending = new ResizeObserver(() => {
+        if (element.offsetWidth > 0 && element.offsetHeight > 0) {
+          pending?.disconnect()
+          resolve()
+        }
+      })
+      pending.observe(element)
+    })
 
     void (async () => {
+      await sized
+      if (disposed) return
       // Fit before starting, so the shell is told the right size from its very
       // first prompt rather than being resized a moment later.
       fitAddon.fit()
@@ -112,6 +164,7 @@ export function TerminalView({ visible, onExit }: Props): React.JSX.Element {
 
     return () => {
       disposed = true
+      pending?.disconnect()
       for (const off of unsubscribers) off()
       if (sessionId.current !== null) {
         void window.claven.invoke('pty:kill', { id: sessionId.current })
@@ -133,8 +186,13 @@ export function TerminalView({ visible, onExit }: Props): React.JSX.Element {
     const resize = (): void => {
       const terminal = term.current
       if (terminal === null || fit.current === null || host.current === null) return
-      // Fitting a hidden element measures zero and leaves the terminal 1x1.
+      // Fitting a hidden element measures zero and leaves the terminal 1x1, and
+      // it does not recover on its own. Size rather than offsetParent is the
+      // check that matters: a terminal parked off screen while hidden still has
+      // an offsetParent, and refitting it to 1x1 would reflow whatever is
+      // running in it.
       if (host.current.offsetParent === null) return
+      if (host.current.offsetWidth === 0 || host.current.offsetHeight === 0) return
       fit.current.fit()
       if (sessionId.current !== null) {
         void window.claven.invoke('pty:resize', {
@@ -154,7 +212,8 @@ export function TerminalView({ visible, onExit }: Props): React.JSX.Element {
   useEffect(() => {
     if (!visible) return
     const timer = setTimeout(() => {
-      if (host.current?.offsetParent === null) return
+      if (host.current === null || host.current.offsetParent === null) return
+      if (host.current.offsetWidth === 0 || host.current.offsetHeight === 0) return
       fit.current?.fit()
       term.current?.focus()
       if (sessionId.current !== null && term.current !== null) {

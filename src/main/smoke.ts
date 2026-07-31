@@ -4,6 +4,26 @@ import { join } from 'node:path'
 import type { BrowserWindow } from 'electron'
 import { setWorkspaceRoot } from './workspace'
 import type { FileMeta, ReadResult } from '../shared/files'
+import {
+  defaultLayout,
+  findPane,
+  isPane,
+  isSplit,
+  MIN_FRACTION,
+  moveTerminal,
+  nextId,
+  paneOfTerminal,
+  panes,
+  parseLayout,
+  removePane,
+  removeTerminal,
+  resetIds,
+  resizeSplit,
+  seedIds,
+  splitPane,
+  stripTerminalPanes,
+  terminalKeys
+} from '../shared/layout'
 
 type Check = { name: string; pass: boolean; detail: string }
 
@@ -399,6 +419,130 @@ export async function runSmokeTest(window: BrowserWindow): Promise<number> {
     traversal.ok ? 'MOVED A FILE OUT OF THE WORKSPACE' : `refused as ${traversal.error.code}`)
 
   await rm(scratch, { recursive: true, force: true }).catch(() => undefined)
+
+  // ---- the layout tree ---------------------------------------------------
+  //
+  // Pure functions on plain data, which is exactly why they live in `shared`:
+  // proving that collapsing a split works should not require driving a window.
+
+  resetIds()
+  const base = defaultLayout()
+  const editorId = base.id
+
+  const withBottom = splitPane(base, editorId, 'bottom', {
+    kind: 'pane',
+    id: 't1',
+    content: { type: 'terminals', terminals: ['a'], active: 'a' }
+  })
+  add('splitting a pane makes a split of two',
+    isSplit(withBottom) && withBottom.direction === 'column' && withBottom.children.length === 2,
+    isSplit(withBottom) ? `${withBottom.direction}, ${withBottom.children.length} children` : 'not a split')
+
+  add('the new pane gets the smaller share',
+    isSplit(withBottom) && (withBottom.sizes[1] ?? 1) < (withBottom.sizes[0] ?? 0),
+    isSplit(withBottom) ? withBottom.sizes.map((s) => s.toFixed(2)).join(' / ') : 'n/a')
+
+  // A second terminal to the right of the first, then a third to the right of
+  // that: naively this nests two row splits inside each other.
+  const twoWide = splitPane(withBottom, 't1', 'right', {
+    kind: 'pane',
+    id: 't2',
+    content: { type: 'terminals', terminals: ['b'], active: 'b' }
+  })
+  const threeWide = splitPane(twoWide, 't2', 'right', {
+    kind: 'pane',
+    id: 't3',
+    content: { type: 'terminals', terminals: ['c'], active: 'c' }
+  })
+  const row = (isSplit(threeWide) ? threeWide.children[1] : null) ?? null
+  add('same-direction splits flatten instead of nesting',
+    row !== null && isSplit(row) && row.children.length === 3 && row.children.every(isPane),
+    row !== null && isSplit(row) ? `${row.children.length} children, nested: ${!row.children.every(isPane)}` : 'no row')
+
+  add('flattening keeps the fractions summing to one',
+    row !== null && isSplit(row) && Math.abs(row.sizes.reduce((sum, s) => sum + s, 0) - 1) < 1e-9,
+    row !== null && isSplit(row) ? row.sizes.map((s) => s.toFixed(3)).join(' + ') : 'n/a')
+
+  const closedOne = removeTerminal(threeWide, 'b')
+  add('closing the last terminal in a pane removes the pane',
+    panes(closedOne).length === 3 && findPane(closedOne, 't2') === null,
+    `${panes(closedOne).length} panes left`)
+
+  const closedAll = ['a', 'c'].reduce(removeTerminal, closedOne)
+  add('closing every terminal collapses back to the editor',
+    isPane(closedAll) && closedAll.content.type === 'editor',
+    isPane(closedAll) ? `single ${closedAll.content.type} pane` : 'still a split')
+
+  // The editor pane is not closable, and the code that closes panes cannot be
+  // trusted to know that.
+  add('the editor pane cannot be removed',
+    removePane(withBottom, editorId) === withBottom,
+    'removePane refused')
+
+  const moved = moveTerminal(threeWide, 'c', { paneId: 't1', edge: 'center' })
+  const host = paneOfTerminal(moved, 'c')
+  add('a terminal dropped on a tab strip joins it',
+    host?.id === 't1' && findPane(moved, 't3') === null,
+    `c now lives in ${host?.id ?? 'nowhere'}`)
+
+  add('dropping a pane\'s only terminal on itself does nothing',
+    moveTerminal(withBottom, 'a', { paneId: 't1', edge: 'left' }) === withBottom,
+    'move refused')
+
+  add('a terminal cannot be dropped into the editor\'s tab strip',
+    moveTerminal(withBottom, 'a', { paneId: editorId, edge: 'center' }) === withBottom,
+    'move refused')
+
+  const hiddenTree = stripTerminalPanes(threeWide)
+  add('hiding terminals leaves the editor alone in the tree',
+    isPane(hiddenTree) && hiddenTree.id === editorId,
+    isPane(hiddenTree) ? 'one editor pane' : 'still a split')
+
+  add('hiding terminals does not lose them from the real layout',
+    terminalKeys(threeWide).join(',') === 'a,b,c',
+    `layout still holds ${terminalKeys(threeWide).join(',')}`)
+
+  const dragged = resizeSplit(withBottom, isSplit(withBottom) ? withBottom.id : '', 0, 0.8)
+  add('dragging a divider keeps the pair summing to what it had',
+    isSplit(dragged) && Math.abs((dragged.sizes[0] ?? 0) + (dragged.sizes[1] ?? 0) - 1) < 1e-9,
+    isSplit(dragged) ? dragged.sizes.map((s) => s.toFixed(2)).join(' / ') : 'n/a')
+
+  const squashed = resizeSplit(withBottom, isSplit(withBottom) ? withBottom.id : '', 0, 5)
+  add('a divider cannot be dragged past a pane\'s minimum',
+    isSplit(squashed) && (squashed.sizes[1] ?? 0) >= MIN_FRACTION - 1e-9,
+    isSplit(squashed) ? `trailing pane at ${(squashed.sizes[1] ?? 0).toFixed(2)}` : 'n/a')
+
+  add('a layout round trips through storage',
+    JSON.stringify(parseLayout(JSON.parse(JSON.stringify(threeWide)))) === JSON.stringify(threeWide),
+    'parse(stringify(x)) === x')
+
+  add('a layout with no editor pane is rejected whole',
+    parseLayout({ kind: 'pane', id: 'x', content: { type: 'terminals', terminals: ['a'], active: 'a' } }) === null,
+    'parseLayout returned null')
+
+  add('a layout with two editor panes is rejected whole',
+    parseLayout({
+      kind: 'split', id: 's', direction: 'row', sizes: [0.5, 0.5],
+      children: [
+        { kind: 'pane', id: 'a', content: { type: 'editor' } },
+        { kind: 'pane', id: 'b', content: { type: 'editor' } }
+      ]
+    }) === null,
+    'parseLayout returned null')
+
+  add('garbage in storage is rejected rather than repaired',
+    parseLayout({ kind: 'pane', id: 'x' }) === null && parseLayout('nonsense') === null,
+    'parseLayout returned null for both')
+
+  // A restored layout brings ids with it, and the counter has to clear them or
+  // the next pane created collides with one already on screen.
+  resetIds()
+  const restored = parseLayout(JSON.parse(JSON.stringify(threeWide)))
+  if (restored !== null) seedIds(restored)
+  const fresh = nextId('pane')
+  add('ids restored from storage cannot collide with new ones',
+    restored !== null && findPane(restored, fresh) === null && !terminalKeys(restored).includes(fresh),
+    `next id after restore was ${fresh}`)
 
   // ---- report ------------------------------------------------------------
 

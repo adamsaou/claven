@@ -38,6 +38,15 @@ prose I did not write being attributed to me is not fixed by the facts being
 correct. Anything that reaches the directory before my pass carries
 `draft: true`, which keeps it out of the index, the landing page and the feed.
 
+**`ANNOYANCES.md` is mine. Never write to it.** Settled 2026-07-31. An assistant
+may read it and reason about it, and must not add, edit or reword a line. The
+log decides the premise at M5, its rules say "write it while annoyed", and an
+entry phrased by a machine is evidence about the machine's phrasing rather than
+about the annoyance. Same reasoning as the devlog rule above, and a stronger
+case: the devlog is only published under my name, whereas this is the
+instrument. If I say something in conversation that belongs in it, say so and
+leave it to me.
+
 **Secrets never enter the repo.** `.env.example` holds fakes. Real coturn
 configs, TURN credentials and keys stay out, permanently.
 
@@ -60,6 +69,7 @@ configs, TURN credentials and keys stay out, permanently.
 | Language intel | LSP over JSON-RPC on stdio, via `@codemirror/lsp-client`. **One server before September: TypeScript's own**, `tsc --lsp --stdio`. Amended 2026-07-29 — it said `typescript-language-server`, which cannot work here: that wrapper drives `tsserver.js`, and TS 7 is the Go rewrite whose `lib/` has no such file. It exits during `initialize`. See the LSP note below. clangd needs `compile_commands.json` on Windows/MinGW or it guesses include paths — a multi-evening hole attached to a workload that compiles fine without it. |
 | AI agents | ACP (Agent Client Protocol). Premise-neutral. Season two — M6 at the earliest. |
 | Terminal | xterm.js + `node-pty`. |
+| Workbench layout | **A split tree, and any pane holds anything.** Closed 2026-07-31, against two log entries rather than an argument: VS Code's layout is cryptic, and CLI AI tools look wrong in a terminal. Slice one ships terminals anywhere plus a single editor pane; a second editor pane is deferred because tabs are still one list in `App`. See the note below on why nothing stateful is rendered inside the tree. |
 | Platforms | Windows and Linux first-class. **macOS is portable-by-construction but untested until I own a Mac** — I cannot run, sign or notarise it, so claiming it as first-class was an unfunded mandate. |
 
 ### Editor core — why CodeMirror 6
@@ -112,6 +122,43 @@ Related: the client has no hook for server-to-client *requests*, so
 `client/registerCapability` is answered inside the Transport. Declaring
 `dynamicRegistration: false` is the polite fix and was tried first; TypeScript
 registers regardless.
+
+### The split layout, and the rule that makes it possible
+
+**Nothing stateful is rendered inside the layout tree.** React unmounts a
+component when it moves to a different parent, and keys do not help: a key only
+preserves an instance among its own siblings. So a terminal rendered inside its
+pane is destroyed by every drag, and destroying a `TerminalView` kills its
+shell. The pane arrives where you dropped it, looking healthy, with a fresh
+prompt and your build gone.
+
+So `Workbench` renders chrome and empty measured boxes, and `SurfaceLayer`
+paints the editor and every terminal over the top of them, absolutely
+positioned, in one flat list. Moving a terminal across the window changes four
+numbers on a style attribute and touches no component identity. The same
+argument covers the editor, which would otherwise lose its undo history and
+every cached scroll position on a split.
+
+The list must also be **ordered by creation, never by position in the tree**.
+Ordering it by the layout reintroduces the same bug in a quieter form: React
+reorders keyed children, which is a DOM move, and moving an xterm detaches and
+reattaches it.
+
+**Two things were measured rather than assumed.** A shell started into a pane
+that has not been laid out yet fits to zero and prints its first prompt one
+column wide, which no later resize repairs, so `TerminalView` waits for a real
+size before spawning. And xterm calls `stopPropagation` on every control
+character it handles, so `Ctrl+J` reached the shell as a line feed and the
+shortcut that hides the terminal did nothing from inside a terminal. Shortcuts
+that only move panels around are now passed through; `Ctrl+C`, `Ctrl+W` and
+`Ctrl+S` stay the shell's, because an editor that ate an interrupt would be
+worse than one with no shortcuts.
+
+**The layout lives in the session file, not localStorage.** It started in
+localStorage, on the reasoning that it is renderer-only chrome. The drive suite
+falsified that: localStorage is flushed to disk on Chromium's own schedule, so
+after a `SIGKILL` the window came back with its unsaved edits intact and its
+panes gone.
 
 ### Licensing — read before touching the license or accepting a PR
 

@@ -8,6 +8,7 @@
  * first time a user clicks the thing.
  */
 import type { DirEntry, FileMeta, ReadResult } from './files'
+import type { LayoutNode } from './layout'
 import type { SearchDone, SearchMatch, SearchQuery } from './search'
 
 export type IpcContract = {
@@ -267,6 +268,16 @@ export type Session = {
   activePath: string | null
   /** Keyed by path, so reopening a file lands where you left it. */
   cursors: Record<string, { line: number; column: number }>
+  /**
+   * The split tree.
+   *
+   * Here rather than in localStorage, which is where it started. localStorage
+   * is held in memory and flushed to disk on Chromium's own schedule, so a
+   * `SIGKILL` loses it: measured, in the drive suite, as a window that came
+   * back with its unsaved edits intact and its panes gone. The session file is
+   * written through and survives, and a layout belongs with the tabs anyway.
+   */
+  layout: LayoutNode | null
 }
 
 export type IpcChannel = keyof IpcContract & string

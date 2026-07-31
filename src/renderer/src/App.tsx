@@ -10,7 +10,9 @@ import { Icon, iconForPath } from './Icons'
 import type { DirEntry, LineEnding } from '../../shared/files'
 import type { IpcResult, LspState } from '../../shared/ipc'
 import { hasLanguageServer } from './editor/lsp'
-import { TerminalDock } from './terminal/TerminalDock'
+import { Workbench, type Rect } from './layout/Workbench'
+import { SurfaceLayer } from './layout/SurfaceLayer'
+import { useLayout } from './layout/useLayout'
 import { SearchPanel } from './SearchPanel'
 import { CodeMirrorEditor, languageForPath, type CursorPosition } from './editor/CodeMirrorEditor'
 import type { FileMeta } from '../../shared/files'
@@ -63,11 +65,14 @@ export default function App(): React.JSX.Element {
   const [sidebarVisible, setSidebarVisible] = useState(true)
   const [pendingChord, setPendingChord] = useState<string | null>(null)
   /**
-   * Mounted from the first time it is opened and never unmounted, so toggling
-   * it away does not kill the shell you were halfway through using.
+   * The split tree, and where every pane currently is on screen. The rects are
+   * measured by the workbench and consumed by the surface layer, which is the
+   * only way a terminal can move between panes without being unmounted and
+   * having its shell killed. See SurfaceLayer.tsx.
    */
-  const [terminalOpen, setTerminalOpen] = useState(false)
-  const [terminalStarted, setTerminalStarted] = useState(false)
+  const layout = useLayout()
+  const [paneRects, setPaneRects] = useState<Record<string, Rect>>({})
+  const [dragActive, setDragActive] = useState(false)
   const [sidebarView, setSidebarView] = useState<'explorer' | 'search'>('explorer')
   /**
    * Where to put the cursor after opening a file from a search result. The nonce
@@ -143,6 +148,9 @@ export default function App(): React.JSX.Element {
       const session = loaded.value.session
       setRoot(session.root)
       setCursors(session.cursors)
+      // Before the files, so the panes are already in place when the editor
+      // gets something to draw and does not have to be measured twice.
+      layout.restore(session.layout)
 
       // Read them in parallel; a file that has since been deleted or renamed
       // is skipped rather than treated as an error.
@@ -207,12 +215,13 @@ export default function App(): React.JSX.Element {
           root,
           openPaths: tabs.map((tab) => tab.path),
           activePath,
-          cursors
+          cursors,
+          layout: layout.layout
         }
       })
     }, 400)
     return () => clearTimeout(timer)
-  }, [restored, root, tabs, activePath, cursors])
+  }, [restored, root, tabs, activePath, cursors, layout.layout])
 
   // The window title is the fastest way to know which file is focused when
   // Claven is one of eight things in the taskbar.
@@ -667,10 +676,12 @@ export default function App(): React.JSX.Element {
         id: 'view.toggleTerminal',
         title: 'toggle terminal',
         keys: 'ctrl+j',
-        run: () => {
-          setTerminalStarted(true)
-          setTerminalOpen((open) => !open)
-        }
+        run: layout.toggleTerminals
+      },
+      {
+        id: 'view.resetLayout',
+        title: 'reset layout',
+        run: layout.reset
       },
       {
         id: 'view.toggleSidebar',
@@ -734,7 +745,17 @@ export default function App(): React.JSX.Element {
         run: () => cycleTab(-1)
       }
     ],
-    [openFolder, save, dirty, active, closeTab, tabs.length, cycleTab]
+    [
+      openFolder,
+      save,
+      dirty,
+      active,
+      closeTab,
+      tabs.length,
+      cycleTab,
+      layout.toggleTerminals,
+      layout.reset
+    ]
   )
 
   useEffect(() => {
@@ -784,8 +805,7 @@ export default function App(): React.JSX.Element {
          * and it is a letter, so it costs the same everywhere.
          */
         event.preventDefault()
-        setTerminalStarted(true)
-        setTerminalOpen((open) => !open)
+        layout.toggleTerminals()
       } else if (event.key.toLowerCase() === 'b') {
         event.preventDefault()
         setSidebarVisible((visible) => !visible)
@@ -804,7 +824,7 @@ export default function App(): React.JSX.Element {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [active, closeTab, cycleTab, pendingChord, openFolder])
+  }, [active, closeTab, cycleTab, pendingChord, openFolder, layout.toggleTerminals])
 
   // A pending chord that never resolves would swallow the next keystroke
   // silently, so it expires.
@@ -813,6 +833,96 @@ export default function App(): React.JSX.Element {
     const timer = setTimeout(() => setPendingChord(null), 2000)
     return () => clearTimeout(timer)
   }, [pendingChord])
+
+  /** The editor pane's chrome. Stateless, so it lives in the tree, not the surface layer. */
+  const editorTabs = (
+    <div
+      className="border-line bg-surface-1 flex shrink-0 items-stretch overflow-x-auto border-b"
+      style={{ height: 'var(--titlebar-h)' }}
+    >
+      {tabs.map((tab) => {
+        const isActive = tab.path === activePath
+        const isDirty = tab.content !== tab.saved
+        return (
+          <div
+            key={tab.path}
+            ref={isActive ? activeTabRef : undefined}
+            className={`group border-line relative flex shrink-0 items-center gap-2 border-e ps-3 pe-2 transition-colors ${
+              isActive ? 'bg-obsidian text-ink' : 'text-ink-muted hover:bg-surface-2'
+            }`}
+            style={{ transitionDuration: 'var(--dur-micro)' }}
+          >
+            {/* Ember as the active-file indicator, per BRAND.md — one of the
+                few places the accent is spent. 2px, no glow. */}
+            {isActive && <span className="bg-ember absolute inset-x-0 top-0 h-0.5" />}
+            <button
+              onClick={() => setActivePath(tab.path)}
+              title={tab.path}
+              className="flex min-w-0 items-center gap-1.5"
+            >
+              <Icon name={iconForPath(tab.name)} size={14} className="shrink-0 opacity-80" />
+              {/* dir="auto" sits on the text node, never on the flex row —
+                  on a container it would reverse the icon and the name for
+                  an Arabic filename. */}
+              <span dir="auto" className="max-w-48 truncate text-[13px]">
+                {tab.name}
+              </span>
+            </button>
+            <button
+              onClick={() => void closeTab(tab.path)}
+              aria-label={`close ${tab.name}`}
+              className="text-ink-dim hover:text-ink flex h-4 w-4 shrink-0 items-center justify-center text-xs"
+            >
+              {/* The dot marks unsaved and becomes a close affordance on
+                  hover, so one slot carries both without a second control. */}
+              <span className={isDirty ? 'group-hover:hidden' : 'hidden'}>●</span>
+              <span className={isDirty ? 'hidden group-hover:inline' : 'inline'}>×</span>
+            </button>
+          </div>
+        )
+      })}
+    </div>
+  )
+
+  const editorSurface = (
+    <div className="h-full w-full">
+      {active ? (
+        <CodeMirrorEditor
+          docId={active.path}
+          openDocIds={openDocIds}
+          rootPath={root}
+          value={active.content}
+          language={languageForPath(active.path)}
+          onChange={(content) =>
+            setTabs((current) =>
+              current.map((tab) => (tab.path === active.path ? { ...tab, content } : tab))
+            )
+          }
+          onSave={() => void save()}
+          initialCursor={cursors[active.path]}
+          revealAt={
+            revealAt !== null && revealAt.path === active.path
+              ? { line: revealAt.line, column: revealAt.column, nonce: revealAt.nonce }
+              : undefined
+          }
+          onCursor={(position) => {
+            setCursor(position)
+            setCursors((current) => ({
+              ...current,
+              [active.path]: { line: position.line, column: position.column }
+            }))
+          }}
+        />
+      ) : (
+        <div className="text-ink-dim flex h-full flex-col items-center justify-center gap-1 text-[13px]">
+          <span>{root === null ? 'no folder open' : 'no file open'}</span>
+          <span className="text-ink-dim/70 text-xs">
+            {root === null ? 'open a folder to start' : 'pick a file from the tree'}
+          </span>
+        </div>
+      )}
+    </div>
+  )
 
   return (
     <div className="relative flex h-full flex-col">
@@ -880,96 +990,33 @@ export default function App(): React.JSX.Element {
         )}
 
         <main className="bg-obsidian flex min-w-0 flex-1 flex-col">
-        <div
-          className="border-line bg-surface-1 flex shrink-0 items-stretch overflow-x-auto border-b"
-          style={{ height: 'var(--titlebar-h)' }}
-        >
-          {tabs.map((tab) => {
-            const isActive = tab.path === activePath
-            const isDirty = tab.content !== tab.saved
-            return (
-              <div
-                key={tab.path}
-                ref={isActive ? activeTabRef : undefined}
-                className={`group border-line relative flex shrink-0 items-center gap-2 border-e ps-3 pe-2 transition-colors ${
-                  isActive ? 'bg-obsidian text-ink' : 'text-ink-muted hover:bg-surface-2'
-                }`}
-                style={{ transitionDuration: 'var(--dur-micro)' }}
-              >
-                {/* Ember as the active-file indicator, per BRAND.md — one of the
-                    few places the accent is spent. 2px, no glow. */}
-                {isActive && <span className="bg-ember absolute inset-x-0 top-0 h-0.5" />}
-                <button
-                  onClick={() => setActivePath(tab.path)}
-                  title={tab.path}
-                  className="flex min-w-0 items-center gap-1.5"
-                >
-                  <Icon name={iconForPath(tab.name)} size={14} className="shrink-0 opacity-80" />
-                  {/* dir="auto" sits on the text node, never on the flex row —
-                      on a container it would reverse the icon and the name for
-                      an Arabic filename. */}
-                  <span dir="auto" className="max-w-48 truncate text-[13px]">
-                    {tab.name}
-                  </span>
-                </button>
-                <button
-                  onClick={() => void closeTab(tab.path)}
-                  aria-label={`close ${tab.name}`}
-                  className="text-ink-dim hover:text-ink flex h-4 w-4 shrink-0 items-center justify-center text-xs"
-                >
-                  {/* The dot marks unsaved and becomes a close affordance on
-                      hover, so one slot carries both without a second control. */}
-                  <span className={isDirty ? 'group-hover:hidden' : 'hidden'}>●</span>
-                  <span className={isDirty ? 'hidden group-hover:inline' : 'inline'}>×</span>
-                </button>
-              </div>
-            )
-          })}
-        </div>
-
-        <div className="min-h-0 flex-1">
-          {active ? (
-            <CodeMirrorEditor
-              docId={active.path}
-              openDocIds={openDocIds}
-              rootPath={root}
-              value={active.content}
-              language={languageForPath(active.path)}
-              onChange={(content) =>
-                setTabs((current) =>
-                  current.map((tab) => (tab.path === active.path ? { ...tab, content } : tab))
-                )
-              }
-              onSave={() => void save()}
-              initialCursor={cursors[active.path]}
-              revealAt={
-                revealAt !== null && revealAt.path === active.path
-                  ? { line: revealAt.line, column: revealAt.column, nonce: revealAt.nonce }
-                  : undefined
-              }
-              onCursor={(position) => {
-                setCursor(position)
-                setCursors((current) => ({
-                  ...current,
-                  [active.path]: { line: position.line, column: position.column }
-                }))
-              }}
+          {/* One positioned box holding the tree and the surfaces drawn over
+              it. Both measure against this origin, so they have to share it. */}
+          <div className="relative flex min-h-0 min-w-0 flex-1">
+            <Workbench
+              layout={layout.visible}
+              onLayout={layout.setLayout}
+              onRects={setPaneRects}
+              onDragging={setDragActive}
+              terminalOrder={layout.terminalOrder}
+              onAddTerminal={layout.addTerminalTo}
+              onCloseTerminal={layout.closeTerminal}
+              onActivateTerminal={layout.activate}
+              onMoveTerminal={layout.move}
+              editorTabs={editorTabs}
             />
-          ) : (
-            <div className="text-ink-dim flex h-full flex-col items-center justify-center gap-1 text-[13px]">
-              <span>{root === null ? 'no folder open' : 'no file open'}</span>
-              <span className="text-ink-dim/70 text-xs">
-                {root === null ? 'open a folder to start' : 'pick a file from the tree'}
-              </span>
-            </div>
-          )}
-        </div>
 
-        {/* Kept mounted once opened and hidden with CSS rather than unmounted,
-            so toggling the panel away does not kill a shell mid-command. */}
-        {terminalStarted && (
-          <TerminalDock open={terminalOpen} onClose={() => setTerminalOpen(false)} />
-        )}
+            <SurfaceLayer
+              rects={paneRects}
+              editorPaneId={layout.editorPaneId}
+              terminals={layout.terminalSlots}
+              onTerminalExit={layout.closeTerminal}
+              editor={editorSurface}
+              // A terminal covers its pane, so during a drag it would swallow
+              // every dragover before the drop zone underneath heard one.
+              interactive={!dragActive}
+            />
+          </div>
 
         <footer
           className="border-line bg-surface-1 text-ink-muted flex shrink-0 items-center gap-4 border-t px-3 text-xs"

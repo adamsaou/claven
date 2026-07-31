@@ -2,6 +2,7 @@ import { app } from 'electron'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { Session } from '../shared/ipc'
+import { parseLayout } from '../shared/layout'
 
 /**
  * Session state — which folder was open, which tabs, where the cursor was.
@@ -30,7 +31,11 @@ export async function loadSession(): Promise<Session | null> {
       root: typeof session.root === 'string' ? session.root : null,
       openPaths: session.openPaths.filter((path): path is string => typeof path === 'string'),
       activePath: typeof session.activePath === 'string' ? session.activePath : null,
-      cursors: typeof session.cursors === 'object' && session.cursors !== null ? session.cursors : {}
+      cursors: typeof session.cursors === 'object' && session.cursors !== null ? session.cursors : {},
+      // Rejected whole rather than repaired if it does not make sense. Falling
+      // back to one editor pane costs a drag; booting into a tree nobody
+      // understands costs a window you cannot use.
+      layout: parseLayout(session.layout)
     }
   } catch {
     return null
