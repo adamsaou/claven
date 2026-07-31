@@ -6,22 +6,37 @@
  * directly instead of the tests having to drive a browser to find out whether
  * collapsing a split works.
  *
- * The invariant everything else leans on: **there is exactly one editor pane,
- * always.** It cannot be closed and it cannot be dragged away. Slice one holds
- * one editor, so a layout with none or two of them is a corrupt layout, not a
- * layout to be repaired into something the user did not ask for.
+ * **A pane holds a list of things and one of them is active.** That is the
+ * whole model, and it is the same sentence for files as for terminals, so they
+ * share every operation here: add, close, activate, drag somewhere else. The
+ * editor used to be a special case that held no list at all, which is why
+ * splitting one was a separate feature rather than the feature that already
+ * existed.
+ *
+ * The one invariant everything else leans on: **at least one editor pane
+ * exists, always.** It may be empty, showing the placeholder. It cannot be the
+ * pane you close, because closing it would leave a window with nowhere to put
+ * a file.
  */
 
 export type Edge = 'left' | 'right' | 'top' | 'bottom'
 
-export type PaneContent =
-  | { type: 'editor' }
+export type PaneKind = 'editors' | 'terminals'
+
+export type PaneContent = {
+  type: PaneKind
   /**
-   * Terminal keys, not pty ids. A view asks main for its shell after it mounts,
-   * so the id does not exist at the moment a tab is created, and keying a layout
-   * on something that arrives later means persisting a pane with no identity.
+   * File paths, or terminal keys.
+   *
+   * Terminal keys rather than pty ids: a view asks main for its shell after it
+   * mounts, so the id does not exist at the moment a tab is created, and keying
+   * a layout on something that arrives later means persisting a pane with no
+   * identity.
    */
-  | { type: 'terminals'; terminals: string[]; active: string }
+  items: string[]
+  /** Null only for an empty editor pane, which is the one pane allowed to be empty. */
+  active: string | null
+}
 
 export type Pane = { kind: 'pane'; id: string; content: PaneContent }
 
@@ -47,8 +62,9 @@ export function isSplit(node: LayoutNode): node is Split {
 /**
  * How much of the space a newly split-off pane takes.
  *
- * A terminal wants less than half. Half is what a naive split gives you and it
- * is wrong every time: the code is the thing you are looking at.
+ * A terminal wants less than half, and so does a second file most of the time:
+ * half is what a naive split gives you and it is wrong more often than not,
+ * because the pane you were already in is the one you were working in.
  */
 const NEW_PANE_FRACTION = 0.32
 
@@ -79,7 +95,9 @@ export function seedIds(root: LayoutNode): void {
     bump(node.id)
     // Terminal keys come from the same counter, so a restored layout that
     // already holds terminal7 must not be handed a fresh pane called terminal7.
-    if (isPane(node) && node.content.type === 'terminals') node.content.terminals.forEach(bump)
+    // File paths are bumped harmlessly: they do not end in a bare number often,
+    // and a counter that is too high is never a problem.
+    if (isPane(node) && node.content.type === 'terminals') node.content.items.forEach(bump)
     if (isSplit(node)) node.children.forEach(visit)
   }
   visit(root)
@@ -93,8 +111,12 @@ export function resetIds(): void {
 
 // ---- reading ---------------------------------------------------------------
 
+export function emptyEditorPane(): Pane {
+  return { kind: 'pane', id: nextId('pane'), content: { type: 'editors', items: [], active: null } }
+}
+
 export function defaultLayout(): LayoutNode {
-  return { kind: 'pane', id: nextId('pane'), content: { type: 'editor' } }
+  return emptyEditorPane()
 }
 
 export function panes(root: LayoutNode): Pane[] {
@@ -106,23 +128,17 @@ export function findPane(root: LayoutNode, id: string): Pane | null {
   return panes(root).find((pane) => pane.id === id) ?? null
 }
 
-export function editorPane(root: LayoutNode): Pane | null {
-  return panes(root).find((pane) => pane.content.type === 'editor') ?? null
+export function panesOfKind(root: LayoutNode, kind: PaneKind): Pane[] {
+  return panes(root).filter((pane) => pane.content.type === kind)
 }
 
-/** Every terminal key in the tree, in layout order. */
-export function terminalKeys(root: LayoutNode): string[] {
-  return panes(root).flatMap((pane) =>
-    pane.content.type === 'terminals' ? pane.content.terminals : []
-  )
+/** Everything of one kind in the tree, in layout order. */
+export function itemsOfKind(root: LayoutNode, kind: PaneKind): string[] {
+  return panesOfKind(root, kind).flatMap((pane) => pane.content.items)
 }
 
-export function paneOfTerminal(root: LayoutNode, key: string): Pane | null {
-  return (
-    panes(root).find(
-      (pane) => pane.content.type === 'terminals' && pane.content.terminals.includes(key)
-    ) ?? null
-  )
+export function paneOfItem(root: LayoutNode, kind: PaneKind, item: string): Pane | null {
+  return panesOfKind(root, kind).find((pane) => pane.content.items.includes(item)) ?? null
 }
 
 // ---- rewriting -------------------------------------------------------------
@@ -158,7 +174,7 @@ function rewrite(
  * Without this every split leaves a nested one behind, and after five drags the
  * tree is a staircase of single-child splits whose dividers no longer line up
  * with anything. Merging a child into a parent of the same direction is the
- * part that keeps three terminals in a row draggable against each other rather
+ * part that keeps three panes in a row draggable against each other rather
  * than against whatever accident of nesting created them.
  */
 export function normalise(node: LayoutNode): LayoutNode {
@@ -198,12 +214,7 @@ export function normalise(node: LayoutNode): LayoutNode {
 }
 
 /** Put `incoming` against one edge of the pane `id`. */
-export function splitPane(
-  root: LayoutNode,
-  id: string,
-  edge: Edge,
-  incoming: Pane
-): LayoutNode {
+export function splitPane(root: LayoutNode, id: string, edge: Edge, incoming: Pane): LayoutNode {
   const direction = edge === 'left' || edge === 'right' ? 'row' : 'column'
   const before = edge === 'left' || edge === 'top'
 
@@ -227,125 +238,140 @@ export function updatePane(
   return normalise(rewrite(root, id, update) ?? root)
 }
 
+/** True when removing this pane would leave nowhere to open a file. */
+export function isLastEditorPane(root: LayoutNode, id: string): boolean {
+  const pane = findPane(root, id)
+  if (pane === null || pane.content.type !== 'editors') return false
+  return panesOfKind(root, 'editors').length === 1
+}
+
 /**
  * Drop a pane out of the tree.
  *
- * Refuses to remove the editor pane. The caller cannot always know that the
- * pane it is closing is the last one holding the editor, and losing it would
- * leave a window with nowhere to put a file.
+ * Refuses to remove the last editor pane. The caller cannot always know that
+ * the pane it is closing is the last one that can hold a file, and losing it
+ * would leave a window with nowhere to open one.
  */
 export function removePane(root: LayoutNode, id: string): LayoutNode {
-  const pane = findPane(root, id)
-  if (pane === null || pane.content.type === 'editor') return root
+  if (findPane(root, id) === null || isLastEditorPane(root, id)) return root
   return normalise(rewrite(root, id, () => null) ?? root)
 }
 
-export function addTerminal(root: LayoutNode, paneId: string, key: string): LayoutNode {
+export function addItem(root: LayoutNode, paneId: string, item: string): LayoutNode {
   return updatePane(root, paneId, (pane) =>
-    pane.content.type === 'terminals'
-      ? {
-          ...pane,
-          content: { type: 'terminals', terminals: [...pane.content.terminals, key], active: key }
-        }
-      : pane
+    pane.content.items.includes(item)
+      ? { ...pane, content: { ...pane.content, active: item } }
+      : { ...pane, content: { ...pane.content, items: [...pane.content.items, item], active: item } }
   )
 }
 
 /**
- * Close one terminal, and the pane with it if it was the last.
+ * Close one item, and the pane with it if it was the last one there.
  *
  * The next tab to activate is the one that took its place, falling back to the
  * one before it. Jumping to the first tab instead is the behaviour that makes
- * closing four terminals in a row feel like the panel is fighting you.
+ * closing four files in a row feel like the strip is fighting you.
  */
-export function removeTerminal(root: LayoutNode, key: string): LayoutNode {
-  const pane = paneOfTerminal(root, key)
-  if (pane === null || pane.content.type !== 'terminals') return root
+export function removeItem(root: LayoutNode, kind: PaneKind, item: string): LayoutNode {
+  const pane = paneOfItem(root, kind, item)
+  if (pane === null) return root
 
-  const remaining = pane.content.terminals.filter((candidate) => candidate !== key)
-  if (remaining.length === 0) return removePane(root, pane.id)
+  const remaining = pane.content.items.filter((candidate) => candidate !== item)
+  // The last editor pane stays, empty, showing its placeholder. Every other
+  // emptied pane goes away rather than leaving a header over nothing.
+  if (remaining.length === 0 && !isLastEditorPane(root, pane.id)) {
+    return removePane(root, pane.id)
+  }
 
-  const index = pane.content.terminals.indexOf(key)
+  const index = pane.content.items.indexOf(item)
   const active =
-    pane.content.active === key
-      ? (remaining[Math.min(index, remaining.length - 1)] ?? remaining[0]!)
+    pane.content.active === item
+      ? (remaining[Math.min(index, remaining.length - 1)] ?? remaining[0] ?? null)
       : pane.content.active
   return updatePane(root, pane.id, (current) => ({
     ...current,
-    content: { type: 'terminals', terminals: remaining, active }
+    content: { ...current.content, items: remaining, active }
   }))
 }
 
-export function activateTerminal(root: LayoutNode, key: string): LayoutNode {
-  const pane = paneOfTerminal(root, key)
+export function activateItem(root: LayoutNode, kind: PaneKind, item: string): LayoutNode {
+  const pane = paneOfItem(root, kind, item)
   if (pane === null) return root
-  return updatePane(root, pane.id, (current) =>
-    current.content.type === 'terminals'
-      ? { ...current, content: { ...current.content, active: key } }
-      : current
-  )
+  return updatePane(root, pane.id, (current) => ({
+    ...current,
+    content: { ...current.content, active: item }
+  }))
 }
 
 /**
- * Move a terminal somewhere else: into another pane's tab strip (`center`) or
+ * Move an item somewhere else: into another pane's tab strip (`center`) or
  * against one of its edges, which splits it.
  */
-export function moveTerminal(
+export function moveItem(
   root: LayoutNode,
-  key: string,
+  kind: PaneKind,
+  item: string,
   target: { paneId: string; edge: Edge | 'center' }
 ): LayoutNode {
-  const from = paneOfTerminal(root, key)
+  const from = paneOfItem(root, kind, item)
   const to = findPane(root, target.paneId)
-  if (from === null || to === null || from.content.type !== 'terminals') return root
+  if (from === null || to === null) return root
 
-  // Dropping a pane's only terminal back onto that same pane is a no-op, and
-  // doing it the long way would delete the pane and then try to split the hole.
-  if (from.id === to.id && (target.edge === 'center' || from.content.terminals.length === 1)) {
+  // Dropping a pane's only item back onto that same pane is a no-op, and doing
+  // it the long way would delete the pane and then try to split the hole.
+  if (from.id === to.id && (target.edge === 'center' || from.content.items.length === 1)) {
     return root
   }
-  // The editor pane holds the editor. Edges of it are fair game; its tab strip
-  // is not.
-  if (target.edge === 'center' && to.content.type !== 'terminals') return root
+  // A tab strip only takes its own kind. Edges are open to anything, because
+  // dropping a terminal beside an editor is the entire point.
+  if (target.edge === 'center' && to.content.type !== kind) return root
 
-  const detached = removeTerminal(root, key)
+  const detached = removeItem(root, kind, item)
   // Removing may have collapsed the source pane, but ids elsewhere are stable,
   // so the target is still findable by the id we were given.
   if (findPane(detached, target.paneId) === null) return root
 
-  if (target.edge === 'center') {
-    return updatePane(detached, target.paneId, (pane) =>
-      pane.content.type === 'terminals'
-        ? {
-            ...pane,
-            content: {
-              type: 'terminals',
-              terminals: [...pane.content.terminals, key],
-              active: key
-            }
-          }
-        : pane
-    )
-  }
+  if (target.edge === 'center') return addItem(detached, target.paneId, item)
 
   return splitPane(detached, target.paneId, target.edge, {
     kind: 'pane',
     id: nextId('pane'),
-    content: { type: 'terminals', terminals: [key], active: key }
+    content: { type: kind, items: [item], active: item }
   })
 }
 
+/** Rename a file everywhere it appears. Used when something is renamed on disk. */
+export function remapItems(
+  root: LayoutNode,
+  kind: PaneKind,
+  move: (item: string) => string | null
+): LayoutNode {
+  const visit = (node: LayoutNode): LayoutNode => {
+    if (isSplit(node)) return { ...node, children: node.children.map(visit) }
+    if (node.content.type !== kind) return node
+    return {
+      ...node,
+      content: {
+        ...node.content,
+        items: node.content.items.map((item) => move(item) ?? item),
+        active: node.content.active === null ? null : (move(node.content.active) ?? node.content.active)
+      }
+    }
+  }
+  return visit(root)
+}
+
 /**
- * The same tree with every terminal pane taken out.
+ * The same tree with every pane of one kind taken out.
  *
  * Used to hide terminals without closing them. The layout itself is kept, so
  * the shells stay running and stay mounted: this is what gets drawn, not what
  * is stored. Toggling terminals off has to mean "off screen" rather than "the
  * dev server you started ten minutes ago is dead".
  */
-export function stripTerminalPanes(root: LayoutNode): LayoutNode {
+export function stripPanes(root: LayoutNode, kind: PaneKind): LayoutNode {
   const visit = (node: LayoutNode): LayoutNode | null => {
-    if (isPane(node)) return node.content.type === 'terminals' ? null : node
+    if (isPane(node)) return node.content.type === kind ? null : node
     const children: LayoutNode[] = []
     const sizes: number[] = []
     node.children.forEach((child, index) => {
@@ -398,7 +424,7 @@ export function resizeSplit(
 export function parseLayout(raw: unknown): LayoutNode | null {
   const node = read(raw)
   if (node === null) return null
-  if (panes(node).filter((pane) => pane.content.type === 'editor').length !== 1) return null
+  if (panesOfKind(node, 'editors').length === 0) return null
   return normalise(node)
 }
 
@@ -410,27 +436,25 @@ function read(raw: unknown): LayoutNode | null {
   if (value.kind === 'pane') {
     const content = value.content as Record<string, unknown> | undefined
     if (content === undefined) return null
-    if (content.type === 'editor') {
-      return { kind: 'pane', id: value.id, content: { type: 'editor' } }
-    }
-    if (content.type === 'terminals') {
-      const terminals = Array.isArray(content.terminals)
-        ? content.terminals.filter((key): key is string => typeof key === 'string')
-        : []
-      // A terminal pane with no terminals is not a thing the UI can draw.
-      if (terminals.length === 0) return null
-      const active = typeof content.active === 'string' ? content.active : terminals[0]!
-      return {
-        kind: 'pane',
-        id: value.id,
-        content: {
-          type: 'terminals',
-          terminals,
-          active: terminals.includes(active) ? active : terminals[0]!
-        }
+    if (content.type !== 'editors' && content.type !== 'terminals') return null
+
+    const items = Array.isArray(content.items)
+      ? content.items.filter((item): item is string => typeof item === 'string')
+      : []
+    // A terminal pane with no terminals is not a thing the UI can draw. An
+    // editor pane with no files is: it is the empty state.
+    if (items.length === 0 && content.type !== 'editors') return null
+
+    const active = typeof content.active === 'string' ? content.active : null
+    return {
+      kind: 'pane',
+      id: value.id,
+      content: {
+        type: content.type,
+        items,
+        active: active !== null && items.includes(active) ? active : (items[0] ?? null)
       }
     }
-    return null
   }
 
   if (value.kind === 'split') {

@@ -10,14 +10,16 @@ import { Icon, iconForPath } from './Icons'
 import type { DirEntry, LineEnding } from '../../shared/files'
 import type { IpcResult, LspState } from '../../shared/ipc'
 import { hasLanguageServer } from './editor/lsp'
-import { Workbench, type Rect } from './layout/Workbench'
-import { SurfaceLayer } from './layout/SurfaceLayer'
+import { Workbench, type Rect, type TabView } from './layout/Workbench'
+import { SurfaceLayer, type Surface } from './layout/SurfaceLayer'
 import { useLayout } from './layout/useLayout'
+import { TerminalView } from './terminal/TerminalView'
+import type { Pane } from '../../shared/layout'
 import { SearchPanel } from './SearchPanel'
 import { CodeMirrorEditor, languageForPath, type CursorPosition } from './editor/CodeMirrorEditor'
 import type { FileMeta } from '../../shared/files'
 
-type Tab = {
+type Doc = {
   path: string
   name: string
   content: string
@@ -54,8 +56,12 @@ const LANGUAGE_LABEL: Record<string, string> = {
 
 export default function App(): React.JSX.Element {
   const [root, setRoot] = useState<string | null>(null)
-  const [tabs, setTabs] = useState<Tab[]>([])
-  const [activePath, setActivePath] = useState<string | null>(null)
+  /**
+   * Every open document, keyed by path. Which pane shows which of them, and
+   * which one is on top in each, is the layout's business rather than this
+   * list's: a document is open once, no matter how many panes exist.
+   */
+  const [docs, setDocs] = useState<Doc[]>([])
   const [notice, setNotice] = useState<Notice>(null)
   const [cursor, setCursor] = useState<CursorPosition>({ line: 1, column: 1, selected: 0 })
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -87,7 +93,6 @@ export default function App(): React.JSX.Element {
     const stored = Number(localStorage.getItem('claven.sidebar.width'))
     return Number.isFinite(stored) && stored >= 140 ? stored : 200
   })
-  const activeTabRef = useRef<HTMLDivElement>(null)
 
   /**
    * Two containers now, so the activity bar stops rendering null and appears
@@ -100,9 +105,12 @@ export default function App(): React.JSX.Element {
     { id: 'search', label: 'search', icon: 'search' }
   ]
 
-  const active = tabs.find((tab) => tab.path === activePath) ?? null
+  const activePath = layout.activePath
+  const docFor = (path: string | null): Doc | null =>
+    path === null ? null : (docs.find((doc) => doc.path === path) ?? null)
+  const active = docFor(activePath)
   const dirty = active !== null && active.content !== active.saved
-  const openDocIds = useMemo(() => tabs.map((tab) => tab.path), [tabs])
+  const openDocIds = useMemo(() => docs.map((doc) => doc.path), [docs])
 
   const [cursors, setCursors] = useState<Record<string, { line: number; column: number }>>({})
   const [restored, setRestored] = useState(false)
@@ -167,7 +175,7 @@ export default function App(): React.JSX.Element {
           }
         })
       )
-      const usable = opened.filter((tab): tab is Tab => tab !== null)
+      const usable = opened.filter((doc): doc is Doc => doc !== null)
 
       /**
        * Put unsaved edits back.
@@ -182,22 +190,25 @@ export default function App(): React.JSX.Element {
       const byPath = new Map(
         backups.ok ? backups.value.buffers.map((buffer) => [buffer.path, buffer]) : []
       )
-      const withEdits = usable.map((tab) => {
-        const backup = byPath.get(tab.path)
-        return backup === undefined ? tab : { ...tab, content: backup.content }
+      const withEdits = usable.map((doc) => {
+        const backup = byPath.get(doc.path)
+        return backup === undefined ? doc : { ...doc, content: backup.content }
       })
-      const restoredCount = withEdits.filter((tab) => tab.content !== tab.saved).length
+      const restoredCount = withEdits.filter((doc) => doc.content !== doc.saved).length
       if (restoredCount > 0) {
         setNotice({
           kind: 'info',
           text: `restored ${restoredCount} unsaved ${restoredCount === 1 ? 'file' : 'files'}`
         })
       }
-      setTabs(withEdits)
-      setActivePath(
-        usable.some((tab) => tab.path === session.activePath)
-          ? session.activePath
-          : (usable.at(-1)?.path ?? null)
+      setDocs(withEdits)
+      // The layout says where each file goes. Reconciling drops any pane entry
+      // whose file has since been deleted, and finds a home for anything the
+      // layout has never heard of, which is every file in a session written
+      // before layouts were stored at all.
+      layout.reconcileFiles(
+        withEdits.map((doc) => doc.path),
+        session.activePath
       )
       setRestored(true)
     })()
@@ -213,7 +224,7 @@ export default function App(): React.JSX.Element {
       void window.claven.invoke('session:save', {
         session: {
           root,
-          openPaths: tabs.map((tab) => tab.path),
+          openPaths: docs.map((doc) => doc.path),
           activePath,
           cursors,
           layout: layout.layout
@@ -221,7 +232,7 @@ export default function App(): React.JSX.Element {
       })
     }, 400)
     return () => clearTimeout(timer)
-  }, [restored, root, tabs, activePath, cursors, layout.layout])
+  }, [restored, root, docs, activePath, cursors, layout.layout])
 
   // The window title is the fastest way to know which file is focused when
   // Claven is one of eight things in the taskbar.
@@ -229,9 +240,14 @@ export default function App(): React.JSX.Element {
     document.title = active ? `${dirty ? '● ' : ''}${active.name} — Claven` : 'Claven'
   }, [active, dirty])
 
-  // Switching to a tab that is scrolled off-screen should bring it into view.
+  // Switching to a file that is scrolled off-screen should bring it into view.
+  // Queried rather than held in a ref: there is a strip per pane now, and the
+  // one that matters is whichever holds the file that just became active.
   useEffect(() => {
-    activeTabRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    if (activePath === null) return
+    document
+      .querySelector(`[data-tab="${CSS.escape(activePath)}"]`)
+      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }, [activePath])
 
   const openFolder = useCallback(async () => {
@@ -243,15 +259,15 @@ export default function App(): React.JSX.Element {
    * Open a file, and hand back the path it actually settled on.
    *
    * The return value is not a convenience. Callers pass paths built with a
-   * forward slash while tabs are keyed on the platform-separator path main
+   * forward slash while documents are keyed on the platform-separator path main
    * resolved, so a caller that then wants to do something with "the tab it just
    * opened" has to be told which one that is. Search's reveal-the-hit silently
    * did nothing for exactly this reason: its path never equalled the tab's.
    */
   const openFile = useCallback(
     async (path: string): Promise<string | null> => {
-      if (tabs.some((tab) => tab.path === path)) {
-        setActivePath(path)
+      if (docs.some((doc) => doc.path === path)) {
+        layout.openInFocused(path)
         return path
       }
       const result = await window.claven.invoke('fs:read', { path })
@@ -280,12 +296,12 @@ export default function App(): React.JSX.Element {
        * saved second failed the changed-on-disk check.
        */
       const canonical = value.meta.path
-      const existing = tabs.find((tab) => tab.path === canonical)
+      const existing = docs.find((doc) => doc.path === canonical)
       if (existing !== undefined) {
-        setActivePath(canonical)
+        layout.openInFocused(canonical)
         return canonical
       }
-      setTabs((current) => [
+      setDocs((current) => [
         ...current,
         {
           path: canonical,
@@ -295,7 +311,7 @@ export default function App(): React.JSX.Element {
           meta: value.meta
         }
       ])
-      setActivePath(canonical)
+      layout.openInFocused(canonical)
       setNotice(
         value.meta.mixedLineEndings
           ? { kind: 'info', text: `mixed line endings — saving normalises to ${value.meta.lineEnding}` }
@@ -303,7 +319,7 @@ export default function App(): React.JSX.Element {
       )
       return canonical
     },
-    [tabs]
+    [docs, layout]
   )
 
   /** Throw away the buffer and take what is on disk. Only ever called with consent. */
@@ -314,8 +330,8 @@ export default function App(): React.JSX.Element {
       return
     }
     const { content, meta } = result.value
-    setTabs((current) =>
-      current.map((tab) => (tab.path === path ? { ...tab, content, saved: content, meta } : tab))
+    setDocs((current) =>
+      current.map((doc) => (doc.path === path ? { ...doc, content, saved: content, meta } : doc))
     )
     setNotice({ kind: 'info', text: 'reloaded from disk' })
   }, [])
@@ -331,25 +347,25 @@ export default function App(): React.JSX.Element {
   useEffect(
     () =>
       window.claven.subscribe('file:changed-on-disk', (payload) => {
-        setTabs((current) => {
-          const tab = current.find((candidate) => candidate.path === payload.path)
-          if (tab === undefined) return current
-          if (tab.content !== tab.saved) {
-            setNotice({ kind: 'error', text: `${tab.name} changed on disk — your copy differs` })
+        setDocs((current) => {
+          const doc = current.find((candidate) => candidate.path === payload.path)
+          if (doc === undefined) return current
+          if (doc.content !== doc.saved) {
+            setNotice({ kind: 'error', text: `${doc.name} changed on disk — your copy differs` })
             return current
           }
           void (async () => {
             const result = await window.claven.invoke('fs:read', { path: payload.path })
             if (!result.ok || result.value.kind !== 'text') return
             const { content, meta } = result.value
-            setTabs((latest) =>
+            setDocs((latest) =>
               latest.map((candidate) =>
                 candidate.path === payload.path
                   ? { ...candidate, content, saved: content, meta }
                   : candidate
               )
             )
-            setNotice({ kind: 'info', text: `${tab.name} reloaded from disk` })
+            setNotice({ kind: 'info', text: `${doc.name} reloaded from disk` })
           })()
           return current
         })
@@ -393,25 +409,27 @@ export default function App(): React.JSX.Element {
       return
     }
     const meta = result.value.meta
-    setTabs((current) =>
-      current.map((tab) => (tab.path === active.path ? { ...tab, saved: tab.content, meta } : tab))
+    setDocs((current) =>
+      current.map((doc) => (doc.path === active.path ? { ...doc, saved: doc.content, meta } : doc))
     )
     // "Opened 2.1 GB in 0.8s." — state what happened and how long it took.
     setNotice({ kind: 'info', text: `saved in ${Math.round(performance.now() - started)}ms` })
   }, [active, reloadFromDisk])
 
-  const forceCloseTabs = useCallback((matches: (path: string) => boolean) => {
-    setTabs((current) => {
-      const index = current.findIndex((tab) => matches(tab.path))
-      const next = current.filter((tab) => !matches(tab.path))
-      setActivePath((currentActive) => {
-        if (currentActive === null || !matches(currentActive)) return currentActive
-        // Focus the neighbour rather than jumping to the end of the strip.
-        return next[Math.min(index, next.length - 1)]?.path ?? null
-      })
-      return next
-    })
-  }, [])
+  /**
+   * Close documents, and take them out of whichever panes were showing them.
+   *
+   * The two have to move together. A document left in the layout with nothing
+   * behind it draws a tab that opens an empty editor, and a document kept alive
+   * with no tab anywhere is a buffer you cannot reach and cannot save.
+   */
+  const forceCloseTabs = useCallback(
+    (matches: (path: string) => boolean) => {
+      for (const path of layout.openPaths.filter(matches)) layout.closeFile(path)
+      setDocs((current) => current.filter((doc) => !matches(doc.path)))
+    },
+    [layout]
+  )
 
   const forceCloseTab = useCallback(
     (path: string) => forceCloseTabs((candidate) => candidate === path),
@@ -426,25 +444,27 @@ export default function App(): React.JSX.Element {
   const remapTabs = useCallback((from: string, to: string) => {
     const moved = (path: string): string | null =>
       isUnder(path, from) ? to + path.slice(from.length) : null
-    setTabs((current) =>
-      current.map((tab) => {
-        const next = moved(tab.path)
-        if (next === null) return tab
+    setDocs((current) =>
+      current.map((doc) => {
+        const next = moved(doc.path)
+        if (next === null) return doc
         return {
-          ...tab,
+          ...doc,
           path: next,
           name: next.split(/[\\/]/).pop() ?? next,
-          meta: { ...tab.meta, path: next }
+          meta: { ...doc.meta, path: next }
         }
       })
     )
-    setActivePath((current) => (current === null ? null : (moved(current) ?? current)))
+    // The panes hold paths too, so a rename that only fixed the documents would
+    // leave every strip pointing at a file that no longer exists.
+    layout.remapFiles(moved)
     setCursors((current) =>
       Object.fromEntries(
         Object.entries(current).map(([path, at]) => [moved(path) ?? path, at])
       )
     )
-  }, [])
+  }, [layout])
 
   /**
    * Closing a modified tab used to discard the changes silently. That was a
@@ -452,20 +472,20 @@ export default function App(): React.JSX.Element {
    */
   const closeTab = useCallback(
     async (path: string) => {
-      const tab = tabs.find((candidate) => candidate.path === path)
-      if (tab === undefined) return
-      if (tab.content === tab.saved) {
+      const doc = docs.find((candidate) => candidate.path === path)
+      if (doc === undefined) return
+      if (doc.content === doc.saved) {
         forceCloseTab(path)
         return
       }
-      const answer = await window.claven.invoke('dialog:confirmDiscard', { name: tab.name })
+      const answer = await window.claven.invoke('dialog:confirmDiscard', { name: doc.name })
       if (!answer.ok || answer.value.action === 'cancel') return
       if (answer.value.action === 'save') {
         const written = await window.claven.invoke('fs:write', {
-          path: tab.path,
-          content: tab.content,
-          meta: tab.meta,
-          expectedMtimeMs: tab.meta.mtimeMs
+          path: doc.path,
+          content: doc.content,
+          meta: doc.meta,
+          expectedMtimeMs: doc.meta.mtimeMs
         })
         // A failed save must not close the tab — that would lose the work the
         // dialog just promised to keep.
@@ -476,23 +496,23 @@ export default function App(): React.JSX.Element {
       }
       forceCloseTab(path)
     },
-    [tabs, forceCloseTab]
+    [docs, forceCloseTab]
   )
 
   /**
    * Tell main which files to watch, and what we believe is on disk.
    *
-   * Keyed on the paths and their mtimes rather than on `tabs`, because the tab
+   * Keyed on the paths and their mtimes rather than on `docs`, because the array
    * array changes identity on every keystroke and this would otherwise reset
    * every watcher in the process several times a second. `meta.mtimeMs` only
    * moves on a read or a write, which is exactly when the baseline should.
    */
-  const watchKey = JSON.stringify(tabs.map((tab) => [tab.path, tab.meta.mtimeMs]))
+  const watchKey = JSON.stringify(docs.map((doc) => [doc.path, doc.meta.mtimeMs]))
   useEffect(() => {
     void window.claven.invoke('watch:files', {
-      files: tabs.map((tab) => ({ path: tab.path, mtimeMs: tab.meta.mtimeMs }))
+      files: docs.map((doc) => ({ path: doc.path, mtimeMs: doc.meta.mtimeMs }))
     })
-    // tabs is read through watchKey on purpose; see above.
+    // docs is read through watchKey on purpose; see above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watchKey])
 
@@ -507,21 +527,21 @@ export default function App(): React.JSX.Element {
     if (!restored) return
     const timer = setTimeout(() => {
       void window.claven.invoke('buffer:sync', {
-        buffers: tabs
-          .filter((tab) => tab.content !== tab.saved)
-          .map((tab) => ({ path: tab.path, content: tab.content, mtimeMs: tab.meta.mtimeMs }))
+        buffers: docs
+          .filter((doc) => doc.content !== doc.saved)
+          .map((doc) => ({ path: doc.path, content: doc.content, mtimeMs: doc.meta.mtimeMs }))
       })
     }, 700)
     return () => clearTimeout(timer)
-  }, [restored, tabs])
+  }, [restored, docs])
 
   // Main cannot see React state, and a renderer cannot veto its own window
   // closing — so the count has to be pushed for the close guard to work.
   //
-  // Derived first and pushed on the count, not on `tabs`: the tab array changes
+  // Derived first and pushed on the count, not on `docs`: the array changes
   // identity on every keystroke, and pushing on that meant an IPC round trip
   // per character typed.
-  const dirtyCount = tabs.filter((tab) => tab.content !== tab.saved).length
+  const dirtyCount = docs.filter((doc) => doc.content !== doc.saved).length
   useEffect(() => {
     void window.claven.invoke('app:setDirtyCount', { count: dirtyCount })
   }, [dirtyCount])
@@ -634,17 +654,9 @@ export default function App(): React.JSX.Element {
     [root, openFile, forceCloseTabs, remapTabs]
   )
 
-  const cycleTab = useCallback(
-    (delta: number) => {
-      setActivePath((current) => {
-        if (tabs.length === 0) return null
-        const index = tabs.findIndex((tab) => tab.path === current)
-        const next = (index + delta + tabs.length) % tabs.length
-        return tabs[next]?.path ?? current
-      })
-    },
-    [tabs]
-  )
+  // Within the focused pane. Cycling across every open file regardless of where
+  // it is would jump the focus between panes on every press.
+  const cycleTab = useCallback((delta: number) => layout.cycleInFocused(delta), [layout])
 
   // Titles are lowercase and verb-first, per the BRAND.md voice.
   const commands = useMemo<Command[]>(
@@ -679,6 +691,15 @@ export default function App(): React.JSX.Element {
         run: layout.toggleTerminals
       },
       {
+        // The keyboard route to what dragging a tab does, and the only route
+        // when a pane holds one file: dropping that tab back on its own pane
+        // is deliberately a no-op, so there would be nothing to drag.
+        id: 'view.splitEditor',
+        title: 'split editor',
+        keys: 'ctrl+\\',
+        run: layout.splitFocusedEditor
+      },
+      {
         id: 'view.resetLayout',
         title: 'reset layout',
         run: layout.reset
@@ -697,24 +718,24 @@ export default function App(): React.JSX.Element {
         run: () => setQuickOpen(true)
       },
       {
-        id: 'tab.close',
-        title: 'close tab',
+        id: 'doc.close',
+        title: 'close doc',
         keys: 'ctrl+w',
         enabled: active !== null,
         run: () => active && void closeTab(active.path)
       },
       {
-        id: 'tab.closeAll',
-        title: 'close all tabs',
-        enabled: tabs.length > 0,
+        id: 'doc.closeAll',
+        title: 'close all docs',
+        enabled: docs.length > 0,
         // Sequential on purpose: each dirty tab gets its own prompt rather
         // than one dialog standing in for all of them.
-        run: () => void tabs.reduce<Promise<void>>(
-          (chain, tab) => chain.then(() => closeTab(tab.path)),
+        run: () => void docs.reduce<Promise<void>>(
+          (chain, doc) => chain.then(() => closeTab(doc.path)),
           Promise.resolve()
         )
       },
-      { id: 'tab.next', title: 'next tab', keys: 'ctrl+tab', enabled: tabs.length > 1, run: () => cycleTab(1) },
+      { id: 'doc.next', title: 'next doc', keys: 'ctrl+doc', enabled: docs.length > 1, run: () => cycleTab(1) },
       // Ranked deliberately high: Windows dev, Linux judges. This is the switch
       // most likely to be needed and least likely to be remembered — exactly
       // what a palette is for.
@@ -723,11 +744,11 @@ export default function App(): React.JSX.Element {
         title: `change line endings to ${ending}`,
         enabled: active !== null && active.meta.lineEnding !== ending,
         run: (): void =>
-          setTabs((current) =>
-            current.map((tab) =>
-              tab.path === active?.path
-                ? { ...tab, meta: { ...tab.meta, lineEnding: ending, mixedLineEndings: false } }
-                : tab
+          setDocs((current) =>
+            current.map((doc) =>
+              doc.path === active?.path
+                ? { ...doc, meta: { ...doc.meta, lineEnding: ending, mixedLineEndings: false } }
+                : doc
             )
           )
       })),
@@ -738,10 +759,10 @@ export default function App(): React.JSX.Element {
         run: () => window.location.reload()
       },
       {
-        id: 'tab.previous',
-        title: 'previous tab',
-        keys: 'ctrl+shift+tab',
-        enabled: tabs.length > 1,
+        id: 'doc.previous',
+        title: 'previous doc',
+        keys: 'ctrl+shift+doc',
+        enabled: docs.length > 1,
         run: () => cycleTab(-1)
       }
     ],
@@ -751,10 +772,11 @@ export default function App(): React.JSX.Element {
       dirty,
       active,
       closeTab,
-      tabs.length,
+      docs.length,
       cycleTab,
       layout.toggleTerminals,
-      layout.reset
+      layout.reset,
+      layout.splitFocusedEditor
     ]
   )
 
@@ -806,6 +828,9 @@ export default function App(): React.JSX.Element {
          */
         event.preventDefault()
         layout.toggleTerminals()
+      } else if (event.key === '\\') {
+        event.preventDefault()
+        layout.splitFocusedEditor()
       } else if (event.key.toLowerCase() === 'b') {
         event.preventDefault()
         setSidebarVisible((visible) => !visible)
@@ -824,7 +849,15 @@ export default function App(): React.JSX.Element {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [active, closeTab, cycleTab, pendingChord, openFolder, layout.toggleTerminals])
+  }, [
+    active,
+    closeTab,
+    cycleTab,
+    pendingChord,
+    openFolder,
+    layout.toggleTerminals,
+    layout.splitFocusedEditor
+  ])
 
   // A pending chord that never resolves would swallow the next keystroke
   // silently, so it expires.
@@ -834,95 +867,112 @@ export default function App(): React.JSX.Element {
     return () => clearTimeout(timer)
   }, [pendingChord])
 
-  /** The editor pane's chrome. Stateless, so it lives in the tree, not the surface layer. */
-  const editorTabs = (
-    <div
-      className="border-line bg-surface-1 flex shrink-0 items-stretch overflow-x-auto border-b"
-      style={{ height: 'var(--titlebar-h)' }}
-    >
-      {tabs.map((tab) => {
-        const isActive = tab.path === activePath
-        const isDirty = tab.content !== tab.saved
-        return (
-          <div
-            key={tab.path}
-            ref={isActive ? activeTabRef : undefined}
-            className={`group border-line relative flex shrink-0 items-center gap-2 border-e ps-3 pe-2 transition-colors ${
-              isActive ? 'bg-obsidian text-ink' : 'text-ink-muted hover:bg-surface-2'
-            }`}
-            style={{ transitionDuration: 'var(--dur-micro)' }}
-          >
-            {/* Ember as the active-file indicator, per BRAND.md — one of the
-                few places the accent is spent. 2px, no glow. */}
-            {isActive && <span className="bg-ember absolute inset-x-0 top-0 h-0.5" />}
-            <button
-              onClick={() => setActivePath(tab.path)}
-              title={tab.path}
-              className="flex min-w-0 items-center gap-1.5"
-            >
-              <Icon name={iconForPath(tab.name)} size={14} className="shrink-0 opacity-80" />
-              {/* dir="auto" sits on the text node, never on the flex row —
-                  on a container it would reverse the icon and the name for
-                  an Arabic filename. */}
-              <span dir="auto" className="max-w-48 truncate text-[13px]">
-                {tab.name}
-              </span>
-            </button>
-            <button
-              onClick={() => void closeTab(tab.path)}
-              aria-label={`close ${tab.name}`}
-              className="text-ink-dim hover:text-ink flex h-4 w-4 shrink-0 items-center justify-center text-xs"
-            >
-              {/* The dot marks unsaved and becomes a close affordance on
-                  hover, so one slot carries both without a second control. */}
-              <span className={isDirty ? 'group-hover:hidden' : 'hidden'}>●</span>
-              <span className={isDirty ? 'hidden group-hover:inline' : 'inline'}>×</span>
-            </button>
-          </div>
-        )
-      })}
+  /**
+   * One pane's tabs. Files carry an icon and their dirty dot; terminals are
+   * numbered globally by creation, so a terminal keeps its label when you drag
+   * it somewhere else.
+   */
+  const tabsFor = (pane: Pane): TabView[] =>
+    pane.content.type === 'editors'
+      ? pane.content.items.map((path) => {
+          const doc = docFor(path)
+          const name = doc?.name ?? (path.split(/[\/]/).pop() ?? path)
+          return {
+            key: path,
+            label: name,
+            title: path,
+            closeLabel: `close ${name}`,
+            dirty: doc !== null && doc.content !== doc.saved,
+            icon: <Icon name={iconForPath(name)} size={14} className="shrink-0 opacity-80" />
+          }
+        })
+      : pane.content.items.map((key) => {
+          const number = layout.terminalOrder.indexOf(key) + 1
+          return {
+            key,
+            label: String(number),
+            closeLabel: `close terminal ${number}`,
+            icon: <Icon name="terminal" size={12} className="shrink-0 opacity-80" />
+          }
+        })
+
+  const emptyEditorState = (
+    <div className="text-ink-dim flex h-full flex-col items-center justify-center gap-1 text-[13px]">
+      <span>{root === null ? 'no folder open' : 'no file open'}</span>
+      <span className="text-ink-dim/70 text-xs">
+        {root === null ? 'open a folder to start' : 'pick a file from the tree'}
+      </span>
     </div>
   )
 
-  const editorSurface = (
-    <div className="h-full w-full">
-      {active ? (
-        <CodeMirrorEditor
-          docId={active.path}
-          openDocIds={openDocIds}
-          rootPath={root}
-          value={active.content}
-          language={languageForPath(active.path)}
-          onChange={(content) =>
-            setTabs((current) =>
-              current.map((tab) => (tab.path === active.path ? { ...tab, content } : tab))
-            )
-          }
-          onSave={() => void save()}
-          initialCursor={cursors[active.path]}
-          revealAt={
-            revealAt !== null && revealAt.path === active.path
-              ? { line: revealAt.line, column: revealAt.column, nonce: revealAt.nonce }
-              : undefined
-          }
-          onCursor={(position) => {
-            setCursor(position)
-            setCursors((current) => ({
-              ...current,
-              [active.path]: { line: position.line, column: position.column }
-            }))
-          }}
-        />
-      ) : (
-        <div className="text-ink-dim flex h-full flex-col items-center justify-center gap-1 text-[13px]">
-          <span>{root === null ? 'no folder open' : 'no file open'}</span>
-          <span className="text-ink-dim/70 text-xs">
-            {root === null ? 'open a folder to start' : 'pick a file from the tree'}
-          </span>
+  /**
+   * One editor per editor pane, showing that pane's current file.
+   *
+   * Each is its own CodeMirror view with its own state cache, which is why a
+   * file lives in exactly one pane: two views over one document would need one
+   * shared model underneath, and two that quietly drift apart is a way to lose
+   * work rather than a feature.
+   */
+  const editorSurfaces: Surface[] = layout.editorSlots.map((slot) => {
+    const pane = layout.editorPanes.find((candidate) => candidate.id === slot.paneId)
+    const doc = docFor(pane?.content.active ?? null)
+    return {
+      key: slot.key,
+      paneId: slot.paneId,
+      visible: slot.visible,
+      node: (
+        <div
+          className="h-full w-full"
+          // The surfaces are drawn outside the pane boxes, so a click in an
+          // editor never reaches the pane's own handler. Focus has to be
+          // claimed here or clicking into a pane would not make it the one
+          // your next Ctrl+S applies to.
+          onMouseDownCapture={() => layout.focusPane(slot.paneId)}
+        >
+          {doc === null ? null : (
+          <CodeMirrorEditor
+            docId={doc.path}
+            openDocIds={openDocIds}
+            rootPath={root}
+            value={doc.content}
+            language={languageForPath(doc.path)}
+            onChange={(content) =>
+              setDocs((current) =>
+                current.map((candidate) =>
+                  candidate.path === doc.path ? { ...candidate, content } : candidate
+                )
+              )
+            }
+            onSave={() => void save()}
+            initialCursor={cursors[doc.path]}
+            revealAt={
+              revealAt !== null && revealAt.path === doc.path
+                ? { line: revealAt.line, column: revealAt.column, nonce: revealAt.nonce }
+                : undefined
+            }
+            onCursor={(position) => {
+              // Only the focused pane drives the status bar. Without the guard
+              // a background pane reports its own cursor whenever it is
+              // measured, and the numbers flicker between two files.
+              if (slot.paneId === layout.focusedPaneId) setCursor(position)
+              setCursors((current) => ({
+                ...current,
+                [doc.path]: { line: position.line, column: position.column }
+              }))
+            }}
+          />
+          )}
         </div>
-      )}
-    </div>
-  )
+      )
+    }
+  })
+
+  const terminalSurfaces: Surface[] = layout.terminalSlots.map((slot) => ({
+    key: slot.key,
+    paneId: slot.paneId,
+    visible: slot.visible,
+    node: <TerminalView visible={slot.visible} onExit={() => layout.closeTerminal(slot.key)} />
+  }))
 
   return (
     <div className="relative flex h-full flex-col">
@@ -1005,23 +1055,30 @@ export default function App(): React.JSX.Element {
             <Workbench
               layout={layout.visible}
               onLayout={layout.setLayout}
+              focusedPaneId={layout.focusedPaneId}
+              onFocusPane={layout.focusPane}
+              tabsFor={tabsFor}
+              emptyEditorState={emptyEditorState}
               onRects={setPaneRects}
               onDragging={setDragActive}
-              terminalOrder={layout.terminalOrder}
+              onSelectTab={(kind, item) =>
+                kind === 'editors' ? layout.activateFile(item) : layout.activateTerminal(item)
+              }
+              onCloseTab={(kind, item) =>
+                kind === 'editors' ? void closeTab(item) : layout.closeTerminal(item)
+              }
               onAddTerminal={layout.addTerminalTo}
-              onCloseTerminal={layout.closeTerminal}
-              onActivateTerminal={layout.activate}
-              onMoveTerminal={layout.move}
-              editorTabs={editorTabs}
+              onMoveItem={layout.moveItemTo}
             />
 
             <SurfaceLayer
               rects={paneRects}
-              editorPaneId={layout.editorPaneId}
-              terminals={layout.terminalSlots}
-              onTerminalExit={layout.closeTerminal}
-              editor={editorSurface}
-              // A terminal covers its pane, so during a drag it would swallow
+              // Editors first, then terminals, and each group in creation
+              // order. Appending to a group inserts one node without moving
+              // its siblings; reordering would move them, and moving an xterm
+              // detaches it.
+              surfaces={[...editorSurfaces, ...terminalSurfaces]}
+              // A surface covers its pane, so during a drag it would swallow
               // every dragover before the drop zone underneath heard one.
               interactive={!dragActive}
             />

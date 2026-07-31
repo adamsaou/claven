@@ -5,16 +5,16 @@ import {
   type Edge,
   type LayoutNode,
   type Pane,
+  type PaneKind,
   type Split
 } from '../../../shared/layout'
-import { Icon } from '../Icons'
 
 /**
  * Draws the layout tree: pane chrome, dividers, and the drop targets a drag
  * lands on.
  *
  * What it deliberately does not draw is the contents of a pane. Each pane's
- * body is an empty measured box, and the editor and the terminals are painted
+ * body is an empty measured box, and the editors and the terminals are painted
  * over the top of it by `SurfaceLayer`. The reason is in that file, and it is
  * the whole reason this component looks emptier than it should.
  */
@@ -24,20 +24,39 @@ export type Rect = { left: number; top: number; width: number; height: number }
 /** How close to an edge a drop has to be to mean "split here" rather than "add a tab". */
 const EDGE_RATIO = 0.25
 
+/** What a pane's tab strip needs in order to draw one tab. */
+export type TabView = {
+  key: string
+  label: string
+  /** Rendered before the label. Omit for none. */
+  icon?: React.ReactNode
+  /** Shows the dot-becomes-cross treatment on the close control. */
+  dirty?: boolean
+  title?: string
+  /**
+   * The close button's accessible name. Given rather than derived, because a
+   * terminal's label is a bare number and "close 1" describes nothing.
+   */
+  closeLabel: string
+}
+
+export type Drag = { kind: PaneKind; item: string }
+
 type Props = {
   layout: LayoutNode
   onLayout: (next: LayoutNode) => void
-  /** The editor pane's tab strip. Stateless, so it can live in the tree and re-render freely. */
-  editorTabs: React.ReactNode
+  focusedPaneId: string
+  onFocusPane: (paneId: string) => void
+  /** Tabs for one pane, in the order they should be drawn. */
+  tabsFor: (pane: Pane) => TabView[]
+  /** The empty state for a pane with nothing in it. Editors only. */
+  emptyEditorState: React.ReactNode
   onRects: (rects: Record<string, Rect>) => void
+  onSelectTab: (kind: PaneKind, item: string) => void
+  onCloseTab: (kind: PaneKind, item: string) => void
   onAddTerminal: (paneId: string) => void
-  onCloseTerminal: (key: string) => void
-  onActivateTerminal: (key: string) => void
-  onMoveTerminal: (key: string, target: { paneId: string; edge: Edge | 'center' }) => void
-  /** Raised so the surface layer can drop out of the way of the drop zones. */
+  onMoveItem: (kind: PaneKind, item: string, target: { paneId: string; edge: Edge | 'center' }) => void
   onDragging: (active: boolean) => void
-  /** Numbering is global and by layout order, so "terminal 3" means one thing across the window. */
-  terminalOrder: string[]
 }
 
 export function Workbench(props: Props): React.JSX.Element {
@@ -45,7 +64,7 @@ export function Workbench(props: Props): React.JSX.Element {
   const slots = useRef(new Map<string, HTMLElement>())
   const published = useRef('')
 
-  const [dragging, setDraggingKey] = useState<string | null>(null)
+  const [dragging, setDraggingItem] = useState<Drag | null>(null)
   const [dropTarget, setDropTarget] = useState<{ paneId: string; edge: Edge | 'center' } | null>(
     null
   )
@@ -53,10 +72,10 @@ export function Workbench(props: Props): React.JSX.Element {
   const { onRects, onDragging } = props
 
   const setDragging = useCallback(
-    (key: string | null) => {
-      setDraggingKey(key)
-      onDragging(key !== null)
-      if (key === null) setDropTarget(null)
+    (drag: Drag | null) => {
+      setDraggingItem(drag)
+      onDragging(drag !== null)
+      if (drag === null) setDropTarget(null)
     },
     [onDragging]
   )
@@ -137,51 +156,64 @@ export function Workbench(props: Props): React.JSX.Element {
 
   // ---- rendering ---------------------------------------------------------
 
-  const renderPane = (pane: Pane): React.JSX.Element => (
-    <div
-      key={pane.id}
-      // Marked in the DOM because the tests assert on what is on screen rather
-      // than on the serialised tree: a layout that persists correctly and draws
-      // in the wrong place is still broken.
-      data-pane={pane.id}
-      data-pane-kind={pane.content.type}
-      className="flex min-h-0 min-w-0 flex-col"
-      style={{ flex: '1 1 0' }}
-    >
-      {pane.content.type === 'editor' ? (
-        props.editorTabs
-      ) : (
-        <TerminalStrip
-          terminals={pane.content.terminals}
-          active={pane.content.active}
-          order={props.terminalOrder}
-          onAdd={() => props.onAddTerminal(pane.id)}
-          onClose={props.onCloseTerminal}
-          onActivate={props.onActivateTerminal}
-          onDragStart={setDragging}
+  const renderPane = (pane: Pane): React.JSX.Element => {
+    const kind = pane.content.type
+    const isEditors = kind === 'editors'
+    const empty = pane.content.items.length === 0
+
+    return (
+      <div
+        key={pane.id}
+        // Marked in the DOM because the tests assert on what is on screen
+        // rather than on the serialised tree: a layout that persists correctly
+        // and draws in the wrong place is still broken.
+        data-pane={pane.id}
+        data-pane-kind={kind}
+        data-focused={isEditors && pane.id === props.focusedPaneId ? '' : undefined}
+        onMouseDownCapture={() => {
+          if (isEditors) props.onFocusPane(pane.id)
+        }}
+        className="flex min-h-0 min-w-0 flex-col"
+        style={{ flex: '1 1 0' }}
+      >
+        <TabStrip
+          pane={pane}
+          tabs={props.tabsFor(pane)}
+          focused={isEditors && pane.id === props.focusedPaneId}
+          onSelect={(item) => props.onSelectTab(kind, item)}
+          onClose={(item) => props.onCloseTab(kind, item)}
+          onAdd={isEditors ? undefined : () => props.onAddTerminal(pane.id)}
+          onDragStart={(item) => setDragging({ kind, item })}
           onDragEnd={() => setDragging(null)}
         />
-      )}
 
-      <div className="relative min-h-0 flex-1">
-        {/* The measured box. Left empty on purpose. */}
-        <div ref={(element) => registerSlot(pane.id, element)} className="h-full w-full" />
+        <div className="relative min-h-0 flex-1">
+          {/* The measured box. Left empty on purpose. */}
+          <div ref={(element) => registerSlot(pane.id, element)} className="h-full w-full" />
 
-        {dragging !== null && (
-          <DropZone
-            paneId={pane.id}
-            canTakeTabs={pane.content.type === 'terminals'}
-            highlight={dropTarget?.paneId === pane.id ? dropTarget.edge : null}
-            onOver={setDropTarget}
-            onDrop={(target) => {
-              props.onMoveTerminal(dragging, target)
-              setDragging(null)
-            }}
-          />
-        )}
+          {/* The one thing drawn in the tree rather than over it, because there
+              is no surface to draw: an editor pane holding no file. */}
+          {isEditors && empty && (
+            <div className="pointer-events-none absolute inset-0">{props.emptyEditorState}</div>
+          )}
+
+          {dragging !== null && (
+            <DropZone
+              paneId={pane.id}
+              // A tab strip only takes its own kind. Edges take anything.
+              canTakeTabs={kind === dragging.kind}
+              highlight={dropTarget?.paneId === pane.id ? dropTarget.edge : null}
+              onOver={setDropTarget}
+              onDrop={(target) => {
+                props.onMoveItem(dragging.kind, dragging.item, target)
+                setDragging(null)
+              }}
+            />
+          )}
+        </div>
       </div>
-    </div>
-  )
+    )
+  }
 
   const renderNode = (node: LayoutNode): React.JSX.Element => {
     if (isPane(node)) return renderPane(node)
@@ -220,10 +252,7 @@ function SplitBox({
           {/* flexGrow rather than a percentage width: the dividers cost real
               pixels, and percentages that ignore them drift the further right
               you go. */}
-          <div
-            className="flex min-h-0 min-w-0"
-            style={{ flex: `${split.sizes[index] ?? 1} 1 0` }}
-          >
+          <div className="flex min-h-0 min-w-0" style={{ flex: `${split.sizes[index] ?? 1} 1 0` }}>
             {renderChild(child)}
           </div>
           {index < split.children.length - 1 && (
@@ -243,9 +272,7 @@ function SplitBox({
             >
               {/* A one pixel line is right to look at and impossible to grab,
                   so the hit area is padded out either side of it. */}
-              <span
-                className={`absolute ${row ? '-inset-x-1 inset-y-0' : '-inset-y-1 inset-x-0'}`}
-              />
+              <span className={`absolute ${row ? '-inset-x-1 inset-y-0' : '-inset-y-1 inset-x-0'}`} />
             </div>
           )}
         </Fragmentish>
@@ -259,80 +286,107 @@ function Fragmentish({ children }: { children: React.ReactNode }): React.JSX.Ele
   return <>{children}</>
 }
 
-// ---- terminal pane chrome --------------------------------------------------
+// ---- pane chrome -----------------------------------------------------------
 
-function TerminalStrip({
-  terminals,
-  active,
-  order,
-  onAdd,
+/**
+ * One strip for both kinds of pane.
+ *
+ * Files and terminals were two separate strips that had drifted apart in three
+ * ways nobody chose: different tab heights, different active indicators, and
+ * only one of them draggable. They are the same control.
+ */
+function TabStrip({
+  pane,
+  tabs,
+  focused,
+  onSelect,
   onClose,
-  onActivate,
+  onAdd,
   onDragStart,
   onDragEnd
 }: {
-  terminals: string[]
-  active: string
-  order: string[]
-  onAdd: () => void
-  onClose: (key: string) => void
-  onActivate: (key: string) => void
-  onDragStart: (key: string) => void
+  pane: Pane
+  tabs: TabView[]
+  focused: boolean
+  onSelect: (item: string) => void
+  onClose: (item: string) => void
+  onAdd?: (() => void) | undefined
+  onDragStart: (item: string) => void
   onDragEnd: () => void
 }): React.JSX.Element {
+  const isEditors = pane.content.type === 'editors'
   return (
     <div
-      className="border-line bg-surface-1 flex shrink-0 items-stretch border-b"
-      style={{ height: 'var(--statusbar-h)' }}
+      className="border-line bg-surface-1 flex shrink-0 items-stretch overflow-x-auto border-b"
+      style={{ height: isEditors ? 'var(--titlebar-h)' : 'var(--statusbar-h)' }}
     >
       <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto">
-        {terminals.map((key) => {
-          const isActive = key === active
-          const number = order.indexOf(key) + 1
+        {tabs.map((tab) => {
+          const isActive = tab.key === pane.content.active
           return (
             <div
-              key={key}
+              key={tab.key}
               draggable
               onDragStart={(event) => {
                 // Required, or Chromium refuses to start the drag at all.
-                event.dataTransfer.setData('text/plain', key)
+                event.dataTransfer.setData('text/plain', tab.key)
                 event.dataTransfer.effectAllowed = 'move'
-                onDragStart(key)
+                onDragStart(tab.key)
               }}
               onDragEnd={onDragEnd}
-              data-terminal-tab={key}
+              data-tab={tab.key}
               className={`group border-line relative flex shrink-0 cursor-grab items-center gap-2 border-e ps-3 pe-2 transition-colors ${
-                isActive ? 'bg-obsidian text-ink' : 'text-ink-dim hover:bg-surface-2'
+                isActive ? 'bg-obsidian text-ink' : 'text-ink-muted hover:bg-surface-2'
               }`}
               style={{ transitionDuration: 'var(--dur-micro)' }}
             >
-              {isActive && <span className="bg-ember absolute inset-x-0 top-0 h-0.5" />}
+              {/* Ember as the active indicator, per BRAND.md. Dimmed in a pane
+                  that is not focused, so with four panes open it is still
+                  obvious which one your next keystroke goes to. */}
+              {isActive && (
+                <span
+                  className={`bg-ember absolute inset-x-0 top-0 h-0.5 ${
+                    isEditors && !focused ? 'opacity-30' : ''
+                  }`}
+                />
+              )}
               <button
-                onClick={() => onActivate(key)}
-                className="flex items-center gap-1.5 text-[11px] font-medium"
+                onClick={() => onSelect(tab.key)}
+                title={tab.title}
+                className={`flex min-w-0 items-center gap-1.5 ${isEditors ? '' : 'text-[11px] font-medium'}`}
               >
-                <Icon name="terminal" size={12} className="shrink-0 opacity-80" />
-                <span>{number}</span>
+                {tab.icon}
+                {/* dir="auto" sits on the text node, never on the flex row: on
+                    a container it would reverse the icon and the name for an
+                    Arabic filename. */}
+                <span dir="auto" className="max-w-48 truncate text-[13px]">
+                  {tab.label}
+                </span>
               </button>
               <button
-                onClick={() => onClose(key)}
-                aria-label={`close terminal ${number}`}
+                onClick={() => onClose(tab.key)}
+                aria-label={tab.closeLabel}
                 className="text-ink-dim hover:text-ink flex h-4 w-4 shrink-0 items-center justify-center text-xs"
               >
-                ×
+                {/* The dot marks unsaved and becomes a close affordance on
+                    hover, so one slot carries both without a second control. */}
+                <span className={tab.dirty === true ? 'group-hover:hidden' : 'hidden'}>●</span>
+                <span className={tab.dirty === true ? 'hidden group-hover:inline' : 'inline'}>×</span>
               </button>
             </div>
           )
         })}
-        <button
-          onClick={onAdd}
-          aria-label="new terminal"
-          title="new terminal in this pane"
-          className="text-ink-dim hover:text-ink shrink-0 px-3 text-sm transition-colors"
-          style={{ transitionDuration: 'var(--dur-micro)' }}
-        >
-          +
-        </button>
+        {onAdd !== undefined && (
+          <button
+            onClick={onAdd}
+            aria-label="new terminal"
+            title="new terminal in this pane"
+            className="text-ink-dim hover:text-ink shrink-0 px-3 text-sm transition-colors"
+            style={{ transitionDuration: 'var(--dur-micro)' }}
+          >
+            +
+          </button>
+        )}
       </div>
     </div>
   )
@@ -378,8 +432,8 @@ function DropZone({
 
   return (
     <div
-      // Above the surface layer, so a pane already covered by a terminal is
-      // still a place you can drop one.
+      // Above the surface layer, so a pane already covered by an editor or a
+      // terminal is still a place you can drop one.
       className="absolute inset-0 z-30"
       data-drop-pane={paneId}
       onDragOver={(event) => {

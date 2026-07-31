@@ -29,7 +29,17 @@ const ELECTRON = join(
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const checks = []
-const add = (name, pass, detail) => checks.push({ name, pass, detail })
+/**
+ * Printed as it happens, not collected and printed at the end.
+ *
+ * This suite takes minutes and drives a real window, so when it wedges the only
+ * useful question is "which check was it on". Buffering everything until the
+ * summary means the answer is an empty terminal.
+ */
+const add = (name, pass, detail) => {
+  checks.push({ name, pass, detail })
+  console.log(`${pass ? 'PASS' : 'FAIL'}  ${name}  —  ${detail}`)
+}
 
 // A temp workspace and a temp profile. The profile matters for more than
 // hygiene: the single-instance lock is per user-data directory, so this runs
@@ -626,18 +636,18 @@ const paneKinds = async () =>
   )) ?? []
 
 const editorPaneId = await evaluate(
-  `document.querySelector('[data-pane-kind="editor"]')?.dataset.pane ?? null`
+  `document.querySelector('[data-pane-kind="editors"]')?.dataset.pane ?? null`
 )
 const panesBefore = await paneKinds()
 
 const draggedKey = await evaluate(`
   (() => {
-    const tab = document.querySelector('[data-terminal-tab]')
+    const tab = document.querySelector('[data-pane-kind="terminals"] [data-tab]')
     if (tab === null) return null
     tab.dispatchEvent(new DragEvent('dragstart', {
       bubbles: true, cancelable: true, dataTransfer: new DataTransfer()
     }))
-    return tab.dataset.terminalTab
+    return tab.dataset.tab
   })()
 `)
 await sleep(400)
@@ -673,7 +683,7 @@ add(
 // and only one of those two things is what anyone looks at.
 const beside = await evaluate(`
   (() => {
-    const editor = document.querySelector('[data-pane-kind="editor"]')
+    const editor = document.querySelector('[data-pane-kind="editors"]')
     const terminal = document.querySelector('[data-pane-kind="terminals"]')
     if (editor === null || terminal === null) return null
     const a = editor.getBoundingClientRect()
@@ -710,6 +720,110 @@ add(
   'the shell behind a moved terminal is still running',
   beatsAfterMove > 0 && beatsLater > beatsAfterMove,
   `counter went ${beatsAfterMove} -> ${beatsLater} across four seconds`
+)
+
+/**
+ * Editor panes split and take files the same way terminal panes do.
+ *
+ * The interesting part is not that a second pane appears, it is that the file
+ * arrives in it still holding the unsaved edit typed at the very start of this
+ * run. An editor rendered inside the tree would have been unmounted by the
+ * split and come back showing what is on disk, which looks like a working
+ * split right up until you notice your work is gone.
+ */
+const editorPaneCount = () =>
+  evaluate(`document.querySelectorAll('[data-pane-kind="editors"]').length`)
+
+const paneCount = () => evaluate(`document.querySelectorAll('[data-pane]').length`)
+
+await clickTab('a.txt')
+await sleep(400)
+await focusEditor()
+// A fresh marker rather than the one typed at the top of this run: the undo
+// check further up deliberately took that one back out again.
+await send('Input.insertText', { text: 'SPLIT_KEEPS_THIS ' })
+await sleep(300)
+await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', modifiers: 2, key: '\\', code: 'Backslash', windowsVirtualKeyCode: 220, nativeVirtualKeyCode: 220 })
+await send('Input.dispatchKeyEvent', { type: 'keyUp', modifiers: 2, key: '\\', code: 'Backslash', windowsVirtualKeyCode: 220, nativeVirtualKeyCode: 220 })
+await sleep(700)
+
+const editorsAfterSplit = await editorPaneCount()
+add(
+  'ctrl+backslash splits the editor',
+  editorsAfterSplit === 2,
+  `${editorsAfterSplit} editor pane(s)`
+)
+
+const splitLayout = await evaluate(`
+  JSON.stringify(
+    Array.from(document.querySelectorAll('[data-pane-kind="editors"]')).map((pane) => ({
+      tabs: Array.from(pane.querySelectorAll('[data-tab]')).map((t) => t.textContent.replace('×', '').trim()),
+      focused: pane.hasAttribute('data-focused')
+    }))
+  )
+`)
+const split = JSON.parse(String(splitLayout ?? '[]'))
+add(
+  'the split moves the current file and focuses where it went',
+  split.length === 2 &&
+    split.filter((pane) => pane.tabs.some((t) => t.startsWith('a.txt'))).length === 1 &&
+    split.find((pane) => pane.tabs.some((t) => t.startsWith('a.txt')))?.focused === true,
+  split.map((pane) => `[${pane.tabs.join(' ')}]${pane.focused ? '*' : ''}`).join(' ')
+)
+
+// Had the split unmounted the editor, the file would arrive in its new pane
+// showing what is on disk, which looks like a working split right up until you
+// notice the edit is gone.
+const keptEdit = await evaluate(`
+  Array.from(document.querySelectorAll('.cm-content'))
+    .some((view) => view.textContent.startsWith('SPLIT_KEEPS_THIS'))
+`)
+add(
+  'a file dragged into a new pane keeps its unsaved edits',
+  keptEdit === true,
+  keptEdit === true ? 'the buffer came with it' : 'the edit was lost in the split'
+)
+
+// And back again, by dropping the tab on the other pane's strip, which leaves
+// the layout as the later checks expect to find it.
+const mergeTarget = await evaluate(`
+  (() => {
+    const panes = Array.from(document.querySelectorAll('[data-pane-kind="editors"]'))
+    const from = panes.find((pane) => Array.from(pane.querySelectorAll('[data-tab]'))
+      .some((t) => t.textContent.includes('a.txt')))
+    const to = panes.find((pane) => pane !== from)
+    if (from === undefined || to === undefined) return 'panes not found'
+    const tab = Array.from(from.querySelectorAll('[data-tab]'))
+      .find((t) => t.textContent.includes('a.txt'))
+    tab.dispatchEvent(new DragEvent('dragstart', {
+      bubbles: true, cancelable: true, dataTransfer: new DataTransfer()
+    }))
+    return to.dataset.pane
+  })()
+`)
+await sleep(400)
+await evaluate(`
+  (() => {
+    const zone = document.querySelector('[data-drop-pane="${mergeTarget}"]')
+    if (zone === null) return false
+    const box = zone.getBoundingClientRect()
+    const at = {
+      bubbles: true, cancelable: true, dataTransfer: new DataTransfer(),
+      clientX: Math.round(box.left + box.width / 2),
+      clientY: Math.round(box.top + box.height / 2)
+    }
+    zone.dispatchEvent(new DragEvent('dragover', at))
+    zone.dispatchEvent(new DragEvent('drop', at))
+    return true
+  })()
+`)
+await sleep(700)
+
+const editorsAfterMerge = await editorPaneCount()
+add(
+  'a pane that loses its last file goes away',
+  editorsAfterMerge === 1,
+  `${editorsAfterMerge} editor pane(s), ${await paneCount()} panes total`
 )
 
 /**
@@ -1008,10 +1122,11 @@ add(
   `${restoredShells} shell(s) started`
 )
 
-let failures = 0
-for (const check of checks) {
-  if (!check.pass) failures += 1
-  console.log(`${check.pass ? 'PASS' : 'FAIL'}  ${check.name}  —  ${check.detail}`)
+// Already printed one by one as they ran; this is only the tally and a repeat
+// of anything that failed, so a long green run does not bury one red line.
+const failures = checks.filter((check) => !check.pass).length
+for (const check of checks.filter((check) => !check.pass)) {
+  console.log(`FAIL  ${check.name}  —  ${check.detail}`)
 }
 console.log(
   failures === 0 ? `\n${checks.length}/${checks.length} passed` : `\n${failures} of ${checks.length} FAILED`

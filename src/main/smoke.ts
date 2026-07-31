@@ -5,24 +5,28 @@ import type { BrowserWindow } from 'electron'
 import { setWorkspaceRoot } from './workspace'
 import type { FileMeta, ReadResult } from '../shared/files'
 import {
+  activateItem,
+  addItem,
   defaultLayout,
+  emptyEditorPane,
   findPane,
   isPane,
   isSplit,
+  itemsOfKind,
   MIN_FRACTION,
-  moveTerminal,
+  moveItem,
   nextId,
-  paneOfTerminal,
+  paneOfItem,
   panes,
+  panesOfKind,
   parseLayout,
+  removeItem,
   removePane,
-  removeTerminal,
   resetIds,
   resizeSplit,
   seedIds,
   splitPane,
-  stripTerminalPanes,
-  terminalKeys
+  stripPanes
 } from '../shared/layout'
 
 type Check = { name: string; pass: boolean; detail: string }
@@ -424,15 +428,23 @@ export async function runSmokeTest(window: BrowserWindow): Promise<number> {
   //
   // Pure functions on plain data, which is exactly why they live in `shared`:
   // proving that collapsing a split works should not require driving a window.
+  //
+  // Files and terminals share every operation here, so most of these are
+  // checked once against whichever kind reads more clearly and the pane-kind
+  // rules are checked against both.
 
   resetIds()
   const base = defaultLayout()
   const editorId = base.id
 
+  add('a fresh layout is one empty editor pane',
+    isPane(base) && base.content.type === 'editors' && base.content.items.length === 0,
+    isPane(base) ? `${base.content.type}, ${base.content.items.length} items` : 'not a pane')
+
   const withBottom = splitPane(base, editorId, 'bottom', {
     kind: 'pane',
     id: 't1',
-    content: { type: 'terminals', terminals: ['a'], active: 'a' }
+    content: { type: 'terminals', items: ['a'], active: 'a' }
   })
   add('splitting a pane makes a split of two',
     isSplit(withBottom) && withBottom.direction === 'column' && withBottom.children.length === 2,
@@ -447,12 +459,12 @@ export async function runSmokeTest(window: BrowserWindow): Promise<number> {
   const twoWide = splitPane(withBottom, 't1', 'right', {
     kind: 'pane',
     id: 't2',
-    content: { type: 'terminals', terminals: ['b'], active: 'b' }
+    content: { type: 'terminals', items: ['b'], active: 'b' }
   })
   const threeWide = splitPane(twoWide, 't2', 'right', {
     kind: 'pane',
     id: 't3',
-    content: { type: 'terminals', terminals: ['c'], active: 'c' }
+    content: { type: 'terminals', items: ['c'], active: 'c' }
   })
   const row = (isSplit(threeWide) ? threeWide.children[1] : null) ?? null
   add('same-direction splits flatten instead of nesting',
@@ -463,44 +475,94 @@ export async function runSmokeTest(window: BrowserWindow): Promise<number> {
     row !== null && isSplit(row) && Math.abs(row.sizes.reduce((sum, s) => sum + s, 0) - 1) < 1e-9,
     row !== null && isSplit(row) ? row.sizes.map((s) => s.toFixed(3)).join(' + ') : 'n/a')
 
-  const closedOne = removeTerminal(threeWide, 'b')
-  add('closing the last terminal in a pane removes the pane',
+  const closedOne = removeItem(threeWide, 'terminals', 'b')
+  add('closing the last item in a pane removes the pane',
     panes(closedOne).length === 3 && findPane(closedOne, 't2') === null,
     `${panes(closedOne).length} panes left`)
 
-  const closedAll = ['a', 'c'].reduce(removeTerminal, closedOne)
+  const closedAll = ['a', 'c'].reduce((tree, key) => removeItem(tree, 'terminals', key), closedOne)
   add('closing every terminal collapses back to the editor',
-    isPane(closedAll) && closedAll.content.type === 'editor',
+    isPane(closedAll) && closedAll.content.type === 'editors',
     isPane(closedAll) ? `single ${closedAll.content.type} pane` : 'still a split')
 
-  // The editor pane is not closable, and the code that closes panes cannot be
-  // trusted to know that.
-  add('the editor pane cannot be removed',
-    removePane(withBottom, editorId) === withBottom,
-    'removePane refused')
-
-  const moved = moveTerminal(threeWide, 'c', { paneId: 't1', edge: 'center' })
-  const host = paneOfTerminal(moved, 'c')
-  add('a terminal dropped on a tab strip joins it',
+  const moved = moveItem(threeWide, 'terminals', 'c', { paneId: 't1', edge: 'center' })
+  const host = paneOfItem(moved, 'terminals', 'c')
+  add('an item dropped on a tab strip joins it',
     host?.id === 't1' && findPane(moved, 't3') === null,
     `c now lives in ${host?.id ?? 'nowhere'}`)
 
-  add('dropping a pane\'s only terminal on itself does nothing',
-    moveTerminal(withBottom, 'a', { paneId: 't1', edge: 'left' }) === withBottom,
+  add("dropping a pane's only item on itself does nothing",
+    moveItem(withBottom, 'terminals', 'a', { paneId: 't1', edge: 'left' }) === withBottom,
     'move refused')
 
-  add('a terminal cannot be dropped into the editor\'s tab strip',
-    moveTerminal(withBottom, 'a', { paneId: editorId, edge: 'center' }) === withBottom,
+  add('a tab strip refuses the other kind',
+    moveItem(withBottom, 'terminals', 'a', { paneId: editorId, edge: 'center' }) === withBottom,
     'move refused')
 
-  const hiddenTree = stripTerminalPanes(threeWide)
+  const beside = moveItem(withBottom, 'terminals', 'a', { paneId: editorId, edge: 'right' })
+  add('an edge takes the other kind, which is the point',
+    paneOfItem(beside, 'terminals', 'a')?.id !== 't1' &&
+      panesOfKind(beside, 'terminals').length === 1,
+    `terminal landed in ${paneOfItem(beside, 'terminals', 'a')?.id ?? 'nowhere'}`)
+
+  const hiddenTree = stripPanes(threeWide, 'terminals')
   add('hiding terminals leaves the editor alone in the tree',
     isPane(hiddenTree) && hiddenTree.id === editorId,
     isPane(hiddenTree) ? 'one editor pane' : 'still a split')
 
   add('hiding terminals does not lose them from the real layout',
-    terminalKeys(threeWide).join(',') === 'a,b,c',
-    `layout still holds ${terminalKeys(threeWide).join(',')}`)
+    itemsOfKind(threeWide, 'terminals').join(',') === 'a,b,c',
+    `layout still holds ${itemsOfKind(threeWide, 'terminals').join(',')}`)
+
+  // ---- editor panes, which are the same thing with a different kind ------
+
+  resetIds()
+  const oneEditor = addItem(addItem(defaultLayout(), 'pane1', 'a.ts'), 'pane1', 'b.ts')
+  add('opening a file activates it',
+    isPane(oneEditor) && oneEditor.content.active === 'b.ts',
+    isPane(oneEditor) ? `active is ${String(oneEditor.content.active)}` : 'not a pane')
+
+  const secondPane = emptyEditorPane()
+  const sideBySide = moveItem(
+    splitPane(oneEditor, 'pane1', 'right', secondPane),
+    'editors',
+    'b.ts',
+    { paneId: secondPane.id, edge: 'center' }
+  )
+  add('a file can be dragged into another editor pane',
+    paneOfItem(sideBySide, 'editors', 'b.ts')?.id === secondPane.id &&
+      paneOfItem(sideBySide, 'editors', 'a.ts')?.id === 'pane1',
+    `a.ts in ${paneOfItem(sideBySide, 'editors', 'a.ts')?.id ?? '?'}, b.ts in ${paneOfItem(sideBySide, 'editors', 'b.ts')?.id ?? '?'}`)
+
+  add('the pane a file left falls back to what is still in it',
+    findPane(sideBySide, 'pane1')?.content.active === 'a.ts',
+    `pane1 shows ${String(findPane(sideBySide, 'pane1')?.content.active)}`)
+
+  const closedSecond = removeItem(sideBySide, 'editors', 'b.ts')
+  add('closing the last file in a second editor pane removes the pane',
+    panesOfKind(closedSecond, 'editors').length === 1,
+    `${panesOfKind(closedSecond, 'editors').length} editor pane(s) left`)
+
+  // The last editor pane is the one thing that cannot go: without it there is
+  // nowhere for the next file to open.
+  const emptied = removeItem(closedSecond, 'editors', 'a.ts')
+  add('the last editor pane survives losing its last file',
+    panesOfKind(emptied, 'editors').length === 1 && itemsOfKind(emptied, 'editors').length === 0,
+    `${panesOfKind(emptied, 'editors').length} pane, ${itemsOfKind(emptied, 'editors').length} files`)
+
+  add('the last editor pane cannot be removed',
+    removePane(emptied, panesOfKind(emptied, 'editors')[0]!.id) === emptied,
+    'removePane refused')
+
+  add('a second editor pane can be removed',
+    panesOfKind(removePane(sideBySide, secondPane.id), 'editors').length === 1,
+    'removePane allowed it')
+
+  add('activating a file that is not open does nothing',
+    activateItem(sideBySide, 'editors', 'nope.ts') === sideBySide,
+    'activate refused')
+
+  // ---- dividers and storage ----------------------------------------------
 
   const dragged = resizeSplit(withBottom, isSplit(withBottom) ? withBottom.id : '', 0, 0.8)
   add('dragging a divider keeps the pair summing to what it had',
@@ -508,27 +570,22 @@ export async function runSmokeTest(window: BrowserWindow): Promise<number> {
     isSplit(dragged) ? dragged.sizes.map((s) => s.toFixed(2)).join(' / ') : 'n/a')
 
   const squashed = resizeSplit(withBottom, isSplit(withBottom) ? withBottom.id : '', 0, 5)
-  add('a divider cannot be dragged past a pane\'s minimum',
+  add("a divider cannot be dragged past a pane's minimum",
     isSplit(squashed) && (squashed.sizes[1] ?? 0) >= MIN_FRACTION - 1e-9,
     isSplit(squashed) ? `trailing pane at ${(squashed.sizes[1] ?? 0).toFixed(2)}` : 'n/a')
 
   add('a layout round trips through storage',
-    JSON.stringify(parseLayout(JSON.parse(JSON.stringify(threeWide)))) === JSON.stringify(threeWide),
+    JSON.stringify(parseLayout(JSON.parse(JSON.stringify(sideBySide)))) === JSON.stringify(sideBySide),
     'parse(stringify(x)) === x')
 
   add('a layout with no editor pane is rejected whole',
-    parseLayout({ kind: 'pane', id: 'x', content: { type: 'terminals', terminals: ['a'], active: 'a' } }) === null,
+    parseLayout({ kind: 'pane', id: 'x', content: { type: 'terminals', items: ['a'], active: 'a' } }) === null,
     'parseLayout returned null')
 
-  add('a layout with two editor panes is rejected whole',
-    parseLayout({
-      kind: 'split', id: 's', direction: 'row', sizes: [0.5, 0.5],
-      children: [
-        { kind: 'pane', id: 'a', content: { type: 'editor' } },
-        { kind: 'pane', id: 'b', content: { type: 'editor' } }
-      ]
-    }) === null,
-    'parseLayout returned null')
+  add('an empty terminal pane is rejected, an empty editor pane is not',
+    parseLayout({ kind: 'pane', id: 'x', content: { type: 'terminals', items: [], active: null } }) === null &&
+      parseLayout({ kind: 'pane', id: 'x', content: { type: 'editors', items: [], active: null } }) !== null,
+    'one rejected, one kept')
 
   add('garbage in storage is rejected rather than repaired',
     parseLayout({ kind: 'pane', id: 'x' }) === null && parseLayout('nonsense') === null,
@@ -537,12 +594,14 @@ export async function runSmokeTest(window: BrowserWindow): Promise<number> {
   // A restored layout brings ids with it, and the counter has to clear them or
   // the next pane created collides with one already on screen.
   resetIds()
-  const restored = parseLayout(JSON.parse(JSON.stringify(threeWide)))
-  if (restored !== null) seedIds(restored)
-  const fresh = nextId('pane')
+  const restoredLayout = parseLayout(JSON.parse(JSON.stringify(threeWide)))
+  if (restoredLayout !== null) seedIds(restoredLayout)
+  const freshId = nextId('pane')
   add('ids restored from storage cannot collide with new ones',
-    restored !== null && findPane(restored, fresh) === null && !terminalKeys(restored).includes(fresh),
-    `next id after restore was ${fresh}`)
+    restoredLayout !== null &&
+      findPane(restoredLayout, freshId) === null &&
+      !itemsOfKind(restoredLayout, 'terminals').includes(freshId),
+    `next id after restore was ${freshId}`)
 
   // ---- report ------------------------------------------------------------
 

@@ -69,7 +69,7 @@ configs, TURN credentials and keys stay out, permanently.
 | Language intel | LSP over JSON-RPC on stdio, via `@codemirror/lsp-client`. **One server before September: TypeScript's own**, `tsc --lsp --stdio`. Amended 2026-07-29 — it said `typescript-language-server`, which cannot work here: that wrapper drives `tsserver.js`, and TS 7 is the Go rewrite whose `lib/` has no such file. It exits during `initialize`. See the LSP note below. clangd needs `compile_commands.json` on Windows/MinGW or it guesses include paths — a multi-evening hole attached to a workload that compiles fine without it. |
 | AI agents | ACP (Agent Client Protocol). Premise-neutral. Season two — M6 at the earliest. |
 | Terminal | xterm.js + `node-pty`. |
-| Workbench layout | **A split tree, and any pane holds anything.** Closed 2026-07-31, against two log entries rather than an argument: VS Code's layout is cryptic, and CLI AI tools look wrong in a terminal. Slice one ships terminals anywhere plus a single editor pane; a second editor pane is deferred because tabs are still one list in `App`. See the note below on why nothing stateful is rendered inside the tree. |
+| Workbench layout | **A split tree, and any pane holds anything.** Closed 2026-07-31, against two log entries rather than an argument: VS Code's layout is cryptic, and CLI AI tools look wrong in a terminal. Files and terminals are the same thing to the layout: a pane holds a list and one of them is active. See the note below on why nothing stateful is rendered inside the tree. |
 | Platforms | Windows and Linux first-class. **macOS is portable-by-construction but untested until I own a Mac** — I cannot run, sign or notarise it, so claiming it as first-class was an unfunded mandate. |
 
 ### Editor core — why CodeMirror 6
@@ -124,6 +124,27 @@ Related: the client has no hook for server-to-client *requests*, so
 registers regardless.
 
 ### The split layout, and the rule that makes it possible
+
+**A pane holds a list of things and one of them is active.** That is the whole
+model, and it is the same sentence for files as for terminals, so both share
+every operation in `shared/layout.ts`: add, close, activate, drag elsewhere. The
+editor started as a special case that held no list at all, which is exactly why
+splitting one was a separate feature rather than the feature that already
+existed. Deleting the special case was most of the work of adding it.
+
+Two invariants. **At least one editor pane exists, always**, possibly empty and
+showing its placeholder, because closing the last one leaves nowhere to open a
+file. And **a file lives in exactly one pane**: opening it again goes to where
+it already is. Two views over one document need one shared model underneath,
+and two that quietly drift apart is a way to lose work rather than a feature.
+That is a real limitation, named rather than hidden. Comparing two parts of one
+long file is not possible yet.
+
+The renderer keeps the documents; the layout keeps placement. `App` holds every
+open document keyed by path, and which pane shows which, and which is on top in
+each, is the tree's business. The two have to be closed together: a document
+left in the layout with nothing behind it draws a tab onto an empty editor, and
+a document kept alive with no tab anywhere is a buffer you cannot reach or save.
 
 **Nothing stateful is rendered inside the layout tree.** React unmounts a
 component when it moves to a different parent, and keys do not help: a key only
