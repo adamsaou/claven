@@ -213,7 +213,15 @@ export function normalise(node: LayoutNode): LayoutNode {
   }
 }
 
-/** Put `incoming` against one edge of the pane `id`. */
+/**
+ * Put `incoming` against one edge of the pane `id`.
+ *
+ * Prunes afterwards, which means **an empty pane cannot be created here and
+ * filled in a second step.** That is deliberate: the alternative is a rule that
+ * holds only some of the time, and the bug this closed was exactly a pane that
+ * was legitimately empty when it was spared and a ghost by the time anything
+ * looked at it again.
+ */
 export function splitPane(root: LayoutNode, id: string, edge: Edge, incoming: Pane): LayoutNode {
   const direction = edge === 'left' || edge === 'right' ? 'row' : 'column'
   const before = edge === 'left' || edge === 'top'
@@ -227,7 +235,7 @@ export function splitPane(root: LayoutNode, id: string, edge: Edge, incoming: Pa
       ? [NEW_PANE_FRACTION, 1 - NEW_PANE_FRACTION]
       : [1 - NEW_PANE_FRACTION, NEW_PANE_FRACTION]
   }))
-  return normalise(next ?? root)
+  return pruneEmptyPanes(normalise(next ?? root))
 }
 
 export function updatePane(
@@ -257,6 +265,38 @@ export function removePane(root: LayoutNode, id: string): LayoutNode {
   return normalise(rewrite(root, id, () => null) ?? root)
 }
 
+/**
+ * Drop any pane that has nothing in it, keeping one editor pane.
+ *
+ * Needed because "is this the last editor pane" is answered against the tree as
+ * it is at that instant, and a move takes the item out before it puts the new
+ * pane in. Drag the only file out of your only editor pane and, for that
+ * instant, the pane it came from is the last one, so it is spared, and then a
+ * second editor pane appears beside it. Nothing afterwards would ever remove
+ * the empty one: panes are removed when their last item goes, and it never had
+ * one. It just sits there drawing a tab strip over nothing.
+ *
+ * Run at the end of a move rather than inside `removeItem`, because an empty
+ * editor pane is legitimate on its own: it is the state you are in with no
+ * files open, and it is what a deliberate split into an empty pane gives you.
+ */
+export function pruneEmptyPanes(root: LayoutNode): LayoutNode {
+  const editors = panesOfKind(root, 'editors')
+  // One empty editor pane is justified only when nothing anywhere holds a file:
+  // that is the no-files-open state, and it has to be somewhere to open one.
+  const keep = editors.some((pane) => pane.content.items.length > 0)
+    ? null
+    : (editors[0]?.id ?? null)
+
+  let next = root
+  for (const pane of panes(root)) {
+    if (pane.content.items.length === 0 && pane.id !== keep) {
+      next = rewrite(next, pane.id, () => null) ?? next
+    }
+  }
+  return normalise(next)
+}
+
 export function addItem(root: LayoutNode, paneId: string, item: string): LayoutNode {
   return updatePane(root, paneId, (pane) =>
     pane.content.items.includes(item)
@@ -279,8 +319,13 @@ export function removeItem(root: LayoutNode, kind: PaneKind, item: string): Layo
   const remaining = pane.content.items.filter((candidate) => candidate !== item)
   // The last editor pane stays, empty, showing its placeholder. Every other
   // emptied pane goes away rather than leaving a header over nothing.
-  if (remaining.length === 0 && !isLastEditorPane(root, pane.id)) {
-    return removePane(root, pane.id)
+  if (remaining.length === 0) {
+    return pruneEmptyPanes(
+      updatePane(root, pane.id, (current) => ({
+        ...current,
+        content: { ...current.content, items: [], active: null }
+      }))
+    )
   }
 
   const index = pane.content.items.indexOf(item)
@@ -288,10 +333,12 @@ export function removeItem(root: LayoutNode, kind: PaneKind, item: string): Layo
     pane.content.active === item
       ? (remaining[Math.min(index, remaining.length - 1)] ?? remaining[0] ?? null)
       : pane.content.active
-  return updatePane(root, pane.id, (current) => ({
-    ...current,
-    content: { ...current.content, items: remaining, active }
-  }))
+  return pruneEmptyPanes(
+    updatePane(root, pane.id, (current) => ({
+      ...current,
+      content: { ...current.content, items: remaining, active }
+    }))
+  )
 }
 
 export function activateItem(root: LayoutNode, kind: PaneKind, item: string): LayoutNode {
@@ -331,13 +378,15 @@ export function moveItem(
   // so the target is still findable by the id we were given.
   if (findPane(detached, target.paneId) === null) return root
 
-  if (target.edge === 'center') return addItem(detached, target.paneId, item)
+  if (target.edge === 'center') return pruneEmptyPanes(addItem(detached, target.paneId, item))
 
-  return splitPane(detached, target.paneId, target.edge, {
-    kind: 'pane',
-    id: nextId('pane'),
-    content: { type: kind, items: [item], active: item }
-  })
+  return pruneEmptyPanes(
+    splitPane(detached, target.paneId, target.edge, {
+      kind: 'pane',
+      id: nextId('pane'),
+      content: { type: kind, items: [item], active: item }
+    })
+  )
 }
 
 /** Rename a file everywhere it appears. Used when something is renamed on disk. */

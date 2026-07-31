@@ -700,8 +700,14 @@ add(
 // Nothing was unmounted: the counter started before the drag is still on
 // screen. A terminal that was torn down and rebuilt would have come back with
 // an empty buffer and a fresh prompt.
+/**
+ * Waits a long time on purpose. Every terminal check below reads this counter,
+ * so when the shell is slow to produce its first line the whole section fails
+ * together and reads like a regression. Observed once at roughly eighteen
+ * seconds on a loaded machine.
+ */
 let beatsAfterMove = 0
-for (let i = 0; i < 20 && beatsAfterMove === 0; i += 1) {
+for (let i = 0; i < 50 && beatsAfterMove === 0; i += 1) {
   await sleep(700)
   beatsAfterMove = await heartbeat()
 }

@@ -134,7 +134,17 @@ existed. Deleting the special case was most of the work of adding it.
 
 Two invariants. **At least one editor pane exists, always**, possibly empty and
 showing its placeholder, because closing the last one leaves nowhere to open a
-file. And **a file lives in exactly one pane**: opening it again goes to where
+file. **And an empty editor pane is only ever the last one.** That second half
+was learned rather than designed: "is this the last editor pane" is answered
+against the tree at that instant, and a move takes the item out before it puts
+the new pane in. Drag the only file out of your only editor pane and, for that
+instant, the pane it came from is the last one, so it is spared, and then a
+second appears beside it. Nothing afterwards would ever remove the empty one,
+because panes go when their last item goes and it never had one. `pruneEmptyPanes`
+enforces the rule after every operation that can change it, and the consequence
+worth knowing is that **a pane cannot be split off empty and filled in a second
+step**. Splitting with one file open is refused and says so, because a file
+lives in one pane and there is nothing to put in the new one. And **a file lives in exactly one pane**: opening it again goes to where
 it already is. Two views over one document need one shared model underneath,
 and two that quietly drift apart is a way to lose work rather than a feature.
 That is a real limitation, named rather than hidden. Comparing two parts of one

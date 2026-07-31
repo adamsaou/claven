@@ -682,6 +682,17 @@ export default function App(): React.JSX.Element {
     [root, openFile, forceCloseTabs, remapTabs]
   )
 
+  /**
+   * Split, and say so when there is nothing to split. A file lives in exactly
+   * one pane, so with one file open there is nothing to put in the new pane.
+   * Creating an empty one instead is what left a pane nothing could remove.
+   */
+  const splitEditor = useCallback(() => {
+    if (!layout.splitFocusedEditor()) {
+      setNotice({ kind: 'info', text: 'open a second file to split this pane' })
+    }
+  }, [layout])
+
   // Within the focused pane. Cycling across every open file regardless of where
   // it is would jump the focus between panes on every press.
   const cycleTab = useCallback((delta: number) => layout.cycleInFocused(delta), [layout])
@@ -725,7 +736,7 @@ export default function App(): React.JSX.Element {
         id: 'view.splitEditor',
         title: 'split editor',
         keys: 'ctrl+\\',
-        run: layout.splitFocusedEditor
+        run: splitEditor
       },
       {
         id: 'view.resetLayout',
@@ -804,7 +815,7 @@ export default function App(): React.JSX.Element {
       cycleTab,
       layout.toggleTerminals,
       layout.reset,
-      layout.splitFocusedEditor
+      splitEditor
     ]
   )
 
@@ -858,7 +869,7 @@ export default function App(): React.JSX.Element {
         layout.toggleTerminals()
       } else if (event.key === '\\') {
         event.preventDefault()
-        layout.splitFocusedEditor()
+        splitEditor()
       } else if (event.key.toLowerCase() === 'b') {
         event.preventDefault()
         setSidebarVisible((visible) => !visible)
@@ -884,7 +895,7 @@ export default function App(): React.JSX.Element {
     pendingChord,
     openFolder,
     layout.toggleTerminals,
-    layout.splitFocusedEditor
+    splitEditor
   ])
 
   // A pending chord that never resolves would swallow the next keystroke
@@ -957,7 +968,16 @@ export default function App(): React.JSX.Element {
    * shared model underneath, and two that quietly drift apart is a way to lose
    * work rather than a feature.
    */
-  const editorSurfaces: Surface[] = layout.editorSlots.map((slot) => {
+  const editorSurfaces: Surface[] = layout.editorSlots
+    // No surface for a pane with no file. Every surface paints an opaque box
+    // over its pane, so an empty one covered the "no file open" placeholder and
+    // left a blank rectangle under a tab strip: the right state, with nothing
+    // on screen saying so.
+    .filter((slot) => {
+      const pane = layout.editorPanes.find((candidate) => candidate.id === slot.paneId)
+      return docFor(pane?.content.active ?? null) !== null
+    })
+    .map((slot) => {
     const pane = layout.editorPanes.find((candidate) => candidate.id === slot.paneId)
     const doc = docFor(pane?.content.active ?? null)
     return {

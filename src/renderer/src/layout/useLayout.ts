@@ -3,7 +3,6 @@ import {
   activateItem,
   addItem,
   defaultLayout,
-  emptyEditorPane,
   findPane,
   isLastEditorPane,
   itemsOfKind,
@@ -59,7 +58,8 @@ export type LayoutApi = {
   remapFiles: (move: (path: string) => string | null) => void
   reconcileFiles: (paths: string[], active: string | null) => void
   cycleInFocused: (delta: number) => void
-  splitFocusedEditor: () => void
+  /** False when there is nothing to split, which the caller should report. */
+  splitFocusedEditor: () => boolean
 
   terminalOrder: string[]
   terminalSlots: Slot[]
@@ -250,24 +250,24 @@ export function useLayout(): LayoutApi {
    * pane holds a single file: dragging that tab back onto its own pane is
    * deliberately a no-op, so there would otherwise be no way to split at all.
    */
-  const splitFocusedEditor = useCallback(() => {
-    if (focusedPane === null) return
+  const splitFocusedEditor = useCallback((): boolean => {
+    if (focusedPane === null) return false
     const path = focusedPane.content.active
     const remaining = focusedPane.content.items.filter((item) => item !== path)
-    const pane = emptyEditorPane()
-    if (path !== null && remaining.length > 0) {
-      // Move it across, the same as dragging the tab would.
-      setLayout(
-        splitPane(removeItem(layout, 'editors', path), focusedPaneId, 'right', {
-          ...pane,
-          content: { type: 'editors', items: [path], active: path }
-        })
-      )
-    } else {
-      // Nothing to move, or moving it would empty this pane. Open an empty one.
-      setLayout(splitPane(layout, focusedPaneId, 'right', pane))
+    // Nothing to split. A file lives in exactly one pane, so with one file open
+    // there is nothing to put in the second pane, and an empty one created here
+    // is a pane that nothing will ever remove. Refused rather than fudged, and
+    // the caller says so.
+    if (path === null || remaining.length === 0) return false
+
+    const pane: Pane = {
+      kind: 'pane',
+      id: nextId('pane'),
+      content: { type: 'editors', items: [path], active: path }
     }
+    setLayout(splitPane(removeItem(layout, 'editors', path), focusedPaneId, 'right', pane))
     setFocusedRequest(pane.id)
+    return true
   }, [layout, focusedPane, focusedPaneId])
 
   // ---- terminals ---------------------------------------------------------

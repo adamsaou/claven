@@ -8,7 +8,6 @@ import {
   activateItem,
   addItem,
   defaultLayout,
-  emptyEditorPane,
   findPane,
   isPane,
   isSplit,
@@ -26,7 +25,9 @@ import {
   resizeSplit,
   seedIds,
   splitPane,
-  stripPanes
+  stripPanes,
+  type LayoutNode,
+  type Pane
 } from '../shared/layout'
 
 type Check = { name: string; pass: boolean; detail: string }
@@ -522,17 +523,15 @@ export async function runSmokeTest(window: BrowserWindow): Promise<number> {
     isPane(oneEditor) && oneEditor.content.active === 'b.ts',
     isPane(oneEditor) ? `active is ${String(oneEditor.content.active)}` : 'not a pane')
 
-  const secondPane = emptyEditorPane()
-  const sideBySide = moveItem(
-    splitPane(oneEditor, 'pane1', 'right', secondPane),
-    'editors',
-    'b.ts',
-    { paneId: secondPane.id, edge: 'center' }
-  )
+  // Dragged to an edge, which is what the UI does. Splitting off an empty pane
+  // and filling it afterwards is deliberately no longer possible: see
+  // pruneEmptyPanes.
+  const sideBySide = moveItem(oneEditor, 'editors', 'b.ts', { paneId: 'pane1', edge: 'right' })
+  const secondPaneId = paneOfItem(sideBySide, 'editors', 'b.ts')?.id ?? ''
   add('a file can be dragged into another editor pane',
-    paneOfItem(sideBySide, 'editors', 'b.ts')?.id === secondPane.id &&
+    secondPaneId !== '' && secondPaneId !== 'pane1' &&
       paneOfItem(sideBySide, 'editors', 'a.ts')?.id === 'pane1',
-    `a.ts in ${paneOfItem(sideBySide, 'editors', 'a.ts')?.id ?? '?'}, b.ts in ${paneOfItem(sideBySide, 'editors', 'b.ts')?.id ?? '?'}`)
+    `a.ts in ${paneOfItem(sideBySide, 'editors', 'a.ts')?.id ?? '?'}, b.ts in ${secondPaneId || '?'}`)
 
   add('the pane a file left falls back to what is still in it',
     findPane(sideBySide, 'pane1')?.content.active === 'a.ts',
@@ -555,8 +554,24 @@ export async function runSmokeTest(window: BrowserWindow): Promise<number> {
     'removePane refused')
 
   add('a second editor pane can be removed',
-    panesOfKind(removePane(sideBySide, secondPane.id), 'editors').length === 1,
+    panesOfKind(removePane(sideBySide, secondPaneId), 'editors').length === 1,
     'removePane allowed it')
+
+  /**
+   * The bug from the screenshot, in one line.
+   *
+   * Drag the only file out of the only editor pane. The pane it left is empty
+   * at the instant it is judged, so it is spared as the last editor pane, and
+   * then the drop creates a second one beside it. Nothing afterwards would ever
+   * remove the empty one, and it sat there drawing a tab strip over nothing.
+   */
+  resetIds()
+  const lonely = addItem(defaultLayout(), 'pane1', 'only.ts')
+  const afterDrag = moveItem(lonely, 'editors', 'only.ts', { paneId: 'pane1', edge: 'right' })
+  add('dragging the only file out of the only editor pane leaves no ghost',
+    panesOfKind(afterDrag, 'editors').length === 1 &&
+      itemsOfKind(afterDrag, 'editors').join(',') === 'only.ts',
+    `${panesOfKind(afterDrag, 'editors').length} editor pane(s), holding ${itemsOfKind(afterDrag, 'editors').join(',') || 'nothing'}`)
 
   add('activating a file that is not open does nothing',
     activateItem(sideBySide, 'editors', 'nope.ts') === sideBySide,
@@ -602,6 +617,159 @@ export async function runSmokeTest(window: BrowserWindow): Promise<number> {
       findPane(restoredLayout, freshId) === null &&
       !itemsOfKind(restoredLayout, 'terminals').includes(freshId),
     `next id after restore was ${freshId}`)
+
+  // ---- the layout tree, fuzzed -------------------------------------------
+  //
+  // The checks above prove the operations one at a time. This proves that no
+  // SEQUENCE of them reaches a tree the UI cannot draw, which is a different
+  // claim and the one that matters: a pane with an empty tab strip and nothing
+  // under it is not something any single operation produces on purpose.
+  //
+  // Seeded, so a failure names the exact sequence that caused it rather than
+  // being a thing that happened once on someone's machine.
+
+  const invariantsOf = (root: LayoutNode): string[] => {
+    const broken: string[] = []
+    const ids = new Set<string>()
+    const items = new Set<string>()
+
+    const visit = (node: LayoutNode): void => {
+      if (ids.has(node.id)) broken.push(`duplicate id ${node.id}`)
+      ids.add(node.id)
+
+      if (isPane(node)) {
+        /**
+         * A pane drawing a tab strip over nothing, which is what the bug
+         * looked like on screen.
+         *
+         * An empty editor pane is legal on its own: it is the state you are in
+         * with no files open. It is not legal alongside another editor pane,
+         * because then it is a ghost nothing will ever remove.
+         */
+        if (node.content.items.length === 0) {
+          if (node.content.type === 'terminals') broken.push(`empty terminal pane ${node.id}`)
+          else if (panesOfKind(root, 'editors').length > 1) {
+            broken.push(`empty editor pane ${node.id} alongside another`)
+          }
+        }
+        if (node.content.active !== null && !node.content.items.includes(node.content.active)) {
+          broken.push(`pane ${node.id} active ${node.content.active} is not one of its items`)
+        }
+        if (node.content.active === null && node.content.items.length > 0) {
+          broken.push(`pane ${node.id} has items but nothing active`)
+        }
+        for (const item of node.content.items) {
+          if (items.has(item)) broken.push(`${item} appears in two panes`)
+          items.add(item)
+        }
+        return
+      }
+
+      if (node.children.length < 2) broken.push(`split ${node.id} has ${node.children.length} children`)
+      if (node.sizes.length !== node.children.length) {
+        broken.push(`split ${node.id} has ${node.sizes.length} sizes for ${node.children.length} children`)
+      }
+      const total = node.sizes.reduce((sum, size) => sum + size, 0)
+      if (Math.abs(total - 1) > 1e-6) broken.push(`split ${node.id} sizes sum to ${total.toFixed(4)}`)
+      if (node.sizes.some((size) => !(size > 0))) broken.push(`split ${node.id} has a non-positive size`)
+      node.children.forEach(visit)
+    }
+
+    visit(root)
+    if (panesOfKind(root, 'editors').length === 0) broken.push('no editor pane left')
+    return broken
+  }
+
+  /** A tiny seeded generator. Deterministic beats random for a test that fails. */
+  const generator = (seed: number): (() => number) => {
+    let state = seed
+    return () => {
+      state = (state * 1103515245 + 12345) % 2147483648
+      return state / 2147483648
+    }
+  }
+
+  const EDGES = ['left', 'right', 'top', 'bottom', 'center'] as const
+  let fuzzFailure: string | null = null
+  let sequences = 0
+  let operations = 0
+
+  for (let seed = 1; seed <= 200 && fuzzFailure === null; seed += 1) {
+    const random = generator(seed)
+    const pick = <T>(list: readonly T[]): T | undefined =>
+      list.length === 0 ? undefined : list[Math.floor(random() * list.length)]
+
+    resetIds()
+    let tree: LayoutNode = defaultLayout()
+    const history: string[] = []
+    sequences += 1
+
+    for (let step = 0; step < 40 && fuzzFailure === null; step += 1) {
+      const allPanes = panes(tree)
+      const files = itemsOfKind(tree, 'editors')
+      const terminals = itemsOfKind(tree, 'terminals')
+      const move = Math.floor(random() * 6)
+      const before = tree
+      operations += 1
+
+      if (move === 0) {
+        const pane = pick(panesOfKind(tree, 'editors'))
+        if (pane === undefined) continue
+        const file = `file${step}.ts`
+        history.push(`addItem(${pane.id}, ${file})`)
+        tree = addItem(tree, pane.id, file)
+      } else if (move === 1) {
+        const pane = pick(panesOfKind(tree, 'terminals'))
+        if (pane === undefined) continue
+        const key = `terminal${step}`
+        history.push(`addItem(${pane.id}, ${key})`)
+        tree = addItem(tree, pane.id, key)
+      } else if (move === 2) {
+        const kind = random() < 0.5 ? 'editors' : 'terminals'
+        const item = pick(kind === 'editors' ? files : terminals)
+        if (item === undefined) continue
+        history.push(`removeItem(${kind}, ${item})`)
+        tree = removeItem(tree, kind, item)
+      } else if (move === 3) {
+        const kind = random() < 0.5 ? 'editors' : 'terminals'
+        const item = pick(kind === 'editors' ? files : terminals)
+        const target = pick(allPanes)
+        const edge = pick(EDGES)
+        if (item === undefined || target === undefined || edge === undefined) continue
+        history.push(`moveItem(${kind}, ${item}, ${target.id}, ${edge})`)
+        tree = moveItem(tree, kind, item, { paneId: target.id, edge })
+      } else if (move === 4) {
+        const target = pick(allPanes)
+        const edge = pick(['left', 'right', 'top', 'bottom'] as const)
+        if (target === undefined || edge === undefined) continue
+        const kind = random() < 0.5 ? 'editors' : 'terminals'
+        const key = `${kind === 'editors' ? 'split' : 'shell'}${step}`
+        const incoming: Pane =
+          kind === 'editors'
+            ? { kind: 'pane', id: nextId('pane'), content: { type: 'editors', items: [key], active: key } }
+            : { kind: 'pane', id: nextId('pane'), content: { type: 'terminals', items: [key], active: key } }
+        history.push(`splitPane(${target.id}, ${edge}, ${kind})`)
+        tree = splitPane(tree, target.id, edge, incoming)
+      } else {
+        const target = pick(allPanes)
+        if (target === undefined) continue
+        history.push(`removePane(${target.id})`)
+        tree = removePane(tree, target.id)
+      }
+
+      const broken = invariantsOf(tree)
+      if (broken.length > 0) {
+        fuzzFailure = `seed ${seed} step ${step}: ${broken.join('; ')}\n    after: ${history.slice(-6).join(' -> ')}`
+      }
+      // Unused, but keeps the intent explicit: an operation may legitimately be
+      // a no-op, and that is not a failure.
+      void before
+    }
+  }
+
+  add('no sequence of layout operations reaches a tree the UI cannot draw',
+    fuzzFailure === null,
+    fuzzFailure ?? `${sequences} sequences, ${operations} operations, invariants held`)
 
   // ---- report ------------------------------------------------------------
 
