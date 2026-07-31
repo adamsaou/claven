@@ -1007,12 +1007,20 @@ await evaluate(`document.querySelectorAll('.xterm-helper-textarea')[0]?.focus(),
 await sleep(200)
 await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', modifiers: 2, key: 'c', code: 'KeyC', windowsVirtualKeyCode: 67, nativeVirtualKeyCode: 67 })
 await send('Input.dispatchKeyEvent', { type: 'keyUp', modifiers: 2, key: 'c', code: 'KeyC', windowsVirtualKeyCode: 67, nativeVirtualKeyCode: 67 })
-await sleep(5000)
-const beatsAfterInterrupt = await heartbeat()
+/**
+ * Sampled twice after the interrupt rather than compared to the value before
+ * it. Output is batched in main and queued in xterm's write buffer, so a line
+ * already in flight can land after the interrupt has taken. The claim is that
+ * the counter stopped, not that it stopped within a frame.
+ */
+await sleep(3000)
+const settling = await heartbeat()
+await sleep(4000)
+const settled = await heartbeat()
 add(
   'ctrl+c still interrupts when nothing is selected',
-  beatsBeforeInterrupt > 0 && beatsAfterInterrupt === beatsBeforeInterrupt,
-  `counter went ${beatsBeforeInterrupt} -> ${beatsAfterInterrupt} across five seconds`
+  beatsBeforeInterrupt > 0 && settled === settling,
+  `counter went ${beatsBeforeInterrupt} -> ${settling} -> ${settled}, so it ${settled === settling ? 'stopped' : 'is still running'}`
 )
 
 

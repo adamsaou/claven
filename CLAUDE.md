@@ -239,6 +239,21 @@ mean depending on a secure context and on Chromium's clipboard-read permission
 behaving the same under a `file://` origin in a packaged build as over http in
 dev. Electron's own clipboard has neither question attached.
 
+**Tab strips are one control, drawn one way.** Both kinds of pane use the
+titlebar metric. A terminal strip on the status-bar metric was drift rather than
+a decision: it is a tab strip, and panes are peers. Three things the chrome does
+that are worth not undoing. The underline is drawn by the tabs, not the strip,
+so the active tab can break it and read as the front of its pane instead of a
+button floating above one. The close control is hidden until a tab is active,
+dirty or hovered, but never removed from the flow, because one that appears on
+hover and shoves the label sideways is worse than one always there. And a
+terminal tab is named after its shell, since an index told you a terminal
+existed and nothing else.
+
+Focus is said twice: background says which tab is on top in its pane, brightness
+says whether that pane is the one your typing reaches. A 2px rail alone cannot
+answer the second question across four panes.
+
 **Still open, and deliberately so.** No shell picker: Windows is hardcoded to
 PowerShell, and the drive suite types PowerShell at it, so changing the default
 is a decision with test consequences rather than a tidy-up. No clickable paths or

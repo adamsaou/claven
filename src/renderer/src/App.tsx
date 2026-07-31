@@ -39,6 +39,12 @@ function isUnder(path: string, root: string): boolean {
   return path === root || path.startsWith(`${root}/`) || path.startsWith(`${root}\\`)
 }
 
+/** The folder a file sits in, used to tell two files with the same name apart. */
+function parentDirOf(path: string): string {
+  const parts = path.split(/[\\/]/)
+  return parts[parts.length - 2] ?? ''
+}
+
 /** Voice, per BRAND.md: terse, mechanical, lowercase in-product. */
 const LANGUAGE_LABEL: Record<string, string> = {
   typescript: 'typescript',
@@ -89,6 +95,8 @@ export default function App(): React.JSX.Element {
    * key, which is a deliberate remount: a new shell needs a new xterm.
    */
   const [exitedTerminals, setExitedTerminals] = useState<Record<string, number>>({})
+  /** What each terminal is running, as reported by main when it spawned. */
+  const [terminalShells, setTerminalShells] = useState<Record<string, string>>({})
   const [terminalGeneration, setTerminalGeneration] = useState<Record<string, number>>({})
   const [sidebarView, setSidebarView] = useState<'explorer' | 'search'>('explorer')
   /**
@@ -122,6 +130,15 @@ export default function App(): React.JSX.Element {
   const active = docFor(activePath)
   const dirty = active !== null && active.content !== active.saved
   const openDocIds = useMemo(() => docs.map((doc) => doc.path), [docs])
+  /** Filenames that more than one open file shares. Nothing else needs a suffix. */
+  const ambiguousNames = useMemo(() => {
+    const seen = new Map<string, number>()
+    for (const path of layout.openPaths) {
+      const name = path.split(/[\\/]/).pop() ?? path
+      seen.set(name, (seen.get(name) ?? 0) + 1)
+    }
+    return new Set([...seen].filter(([, count]) => count > 1).map(([name]) => name))
+  }, [layout.openPaths])
 
   const [cursors, setCursors] = useState<Record<string, { line: number; column: number }>>({})
   const [restored, setRestored] = useState(false)
@@ -887,10 +904,15 @@ export default function App(): React.JSX.Element {
     pane.content.type === 'editors'
       ? pane.content.items.map((path) => {
           const doc = docFor(path)
-          const name = doc?.name ?? (path.split(/[\/]/).pop() ?? path)
+          const name = doc?.name ?? (path.split(/[\\/]/).pop() ?? path)
           return {
             key: path,
             label: name,
+            // Two files called index.ts make two identical tabs, and which one
+            // you are looking at is exactly the thing the tab is for. Only
+            // drawn when it is genuinely ambiguous, so the common case stays
+            // clean.
+            detail: ambiguousNames.has(name) ? parentDirOf(path) : undefined,
             title: path,
             closeLabel: `close ${name}`,
             dirty: doc !== null && doc.content !== doc.saved,
@@ -900,12 +922,20 @@ export default function App(): React.JSX.Element {
       : pane.content.items.map((key) => {
           const number = layout.terminalOrder.indexOf(key) + 1
           const code = exitedTerminals[key]
+          const shell = terminalShells[key]
           return {
             key,
-            label: String(number),
+            // The shell's name, not a bare index. An index told you a terminal
+            // existed and nothing else, and it stops meaning anything at all
+            // once more than one kind of shell can be started.
+            label: shell ?? 'shell',
+            // The index is kept where it is still useful: telling two
+            // powershells apart, and naming the close control.
+            detail: layout.terminalOrder.length > 1 ? String(number) : undefined,
             closeLabel: `close terminal ${number}`,
             exited: code !== undefined,
-            title: code === undefined ? undefined : `shell exited with code ${code}`,
+            title:
+              code === undefined ? shell : `${shell ?? 'shell'} exited with code ${code}`,
             icon: <Icon name="terminal" size={12} className="shrink-0 opacity-80" />
           }
         })
@@ -1000,6 +1030,7 @@ export default function App(): React.JSX.Element {
     node: (
       <TerminalView
         visible={slot.visible}
+        onStart={(shell) => setTerminalShells((current) => ({ ...current, [slot.key]: shell }))}
         onExit={(code) => setExitedTerminals((current) => ({ ...current, [slot.key]: code }))}
       />
     )

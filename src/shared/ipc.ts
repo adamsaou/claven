@@ -176,7 +176,12 @@ export type IpcContract = {
    */
   'pty:start': {
     request: { cols: number; rows: number }
-    response: { id: string }
+    /**
+     * `shell` is what to call the tab. A bare index told you a terminal existed
+     * and nothing else, and it stops meaning anything at all once more than one
+     * kind of shell can be started.
+     */
+    response: { id: string; shell: string }
   }
 
   /** Keystrokes, straight through. The shell decides what they mean. */

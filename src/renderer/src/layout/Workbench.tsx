@@ -40,6 +40,11 @@ export type TabView = {
   closeLabel: string
   /** A terminal whose shell has ended. Drawn dimmed, and offers a restart. */
   exited?: boolean
+  /**
+   * A dim suffix after the label. Used to tell two files with the same name
+   * apart, which a filename alone cannot do.
+   */
+  detail?: string
 }
 
 export type Drag = { kind: PaneKind; item: string }
@@ -183,7 +188,10 @@ export function Workbench(props: Props): React.JSX.Element {
         <TabStrip
           pane={pane}
           tabs={props.tabsFor(pane)}
-          focused={isEditors && pane.id === props.focusedPaneId}
+          // Terminal panes are always drawn at full strength: "which pane has
+          // focus" is a question about where your next keystroke goes, and that
+          // is only ever an editor pane.
+          focused={!isEditors || pane.id === props.focusedPaneId}
           onSelect={(item) => props.onSelectTab(kind, item)}
           onClose={(item) => props.onCloseTab(kind, item)}
           onAdd={isEditors ? undefined : () => props.onAddTerminal(pane.id)}
@@ -325,14 +333,27 @@ function TabStrip({
   onDragStart: (item: string) => void
   onDragEnd: () => void
 }): React.JSX.Element {
-  const isEditors = pane.content.type === 'editors'
+  /**
+   * The line under the strip is drawn by the tabs, not by the strip.
+   *
+   * That is the whole trick, and it is what makes a tab read as the front of
+   * its pane rather than a button floating above one. A border on the container
+   * runs straight under the active tab and cuts it off from the content it
+   * owns. Drawn per tab, the active one can break the line by matching the
+   * background of the pane below it.
+   */
+  const underline = (active: boolean): string =>
+    active ? 'border-b border-obsidian' : 'border-b border-line'
+
   return (
     <div
-      className="border-line bg-surface-1 flex shrink-0 items-stretch overflow-x-auto border-b"
-      style={{ height: isEditors ? 'var(--titlebar-h)' : 'var(--statusbar-h)' }}
+      className="bg-surface-1 flex shrink-0 items-stretch"
+      // Both kinds of pane use the titlebar metric. A terminal strip on the
+      // status-bar metric was the drift: it is a tab strip, and panes are peers.
+      style={{ height: 'var(--titlebar-h)' }}
     >
-      <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto">
-        {tabs.map((tab) => {
+      <div className="flex min-w-0 items-stretch overflow-x-auto">
+        {tabs.map((tab, index) => {
           const isActive = tab.key === pane.content.active
           return (
             <div
@@ -346,8 +367,18 @@ function TabStrip({
               }}
               onDragEnd={onDragEnd}
               data-tab={tab.key}
-              className={`group border-line relative flex shrink-0 cursor-grab items-center gap-2 border-e ps-3 pe-2 transition-colors ${
-                isActive ? 'bg-obsidian text-ink' : 'text-ink-muted hover:bg-surface-2'
+              className={`group relative flex shrink-0 cursor-grab items-center gap-2 ps-3 pe-2 transition-colors ${underline(isActive)} ${
+                // No divider after the last tab. One drawn there is a line
+                // separating a tab from nothing.
+                index < tabs.length - 1 ? 'border-e border-line' : ''
+              } ${
+                isActive
+                  ? // Two cues, not one. The background says which tab is on top
+                    // in this pane; the brightness says whether this is the pane
+                    // your typing goes to. A 2px rail alone is too thin to
+                    // answer the second question across four panes.
+                    `bg-obsidian ${focused ? 'text-ink' : 'text-ink-muted'}`
+                  : 'text-ink-muted hover:bg-surface-2'
               } ${tab.exited === true ? 'opacity-50' : ''}`}
               style={{ transitionDuration: 'var(--dur-micro)' }}
             >
@@ -357,14 +388,14 @@ function TabStrip({
               {isActive && (
                 <span
                   className={`bg-ember absolute inset-x-0 top-0 h-0.5 ${
-                    isEditors && !focused ? 'opacity-30' : ''
+                    focused ? '' : 'opacity-30'
                   }`}
                 />
               )}
               <button
                 onClick={() => onSelect(tab.key)}
                 title={tab.title}
-                className={`flex min-w-0 items-center gap-1.5 ${isEditors ? '' : 'text-[11px] font-medium'}`}
+                className="flex min-w-0 items-center gap-1.5"
               >
                 {tab.icon}
                 {/* dir="auto" sits on the text node, never on the flex row: on
@@ -373,11 +404,29 @@ function TabStrip({
                 <span dir="auto" className="max-w-48 truncate text-[13px]">
                   {tab.label}
                 </span>
+                {/* Only drawn when two open files share a name, which is the
+                    only time the name alone is not an answer. */}
+                {tab.detail !== undefined && (
+                  <span dir="auto" className="text-ink-dim max-w-32 truncate text-[11px]">
+                    {tab.detail}
+                  </span>
+                )}
               </button>
               <button
                 onClick={() => onClose(tab.key)}
                 aria-label={tab.closeLabel}
-                className="text-ink-dim hover:text-ink flex h-4 w-4 shrink-0 items-center justify-center text-xs"
+                /**
+                 * Hidden until it is wanted, but never removed from the flow.
+                 * A close control on every tab at all times is noise, and one
+                 * that appears on hover and pushes the label sideways is worse
+                 * than either.
+                 */
+                className={`text-ink-dim hover:text-ink flex h-4 w-4 shrink-0 items-center justify-center text-xs transition-opacity ${
+                  isActive || tab.dirty === true
+                    ? 'opacity-100'
+                    : 'opacity-0 group-hover:opacity-100'
+                }`}
+                style={{ transitionDuration: 'var(--dur-micro)' }}
               >
                 {/* The dot marks unsaved and becomes a close affordance on
                     hover, so one slot carries both without a second control. */}
@@ -392,7 +441,7 @@ function TabStrip({
             onClick={onRestart}
             aria-label="restart terminal"
             title="the shell ended. start another"
-            className="text-ink-dim hover:text-ember shrink-0 px-3 text-sm transition-colors"
+            className="text-ink-dim hover:text-ember border-line shrink-0 border-b px-3 text-sm transition-colors"
             style={{ transitionDuration: 'var(--dur-micro)' }}
           >
             &#10227;
@@ -403,13 +452,15 @@ function TabStrip({
             onClick={onAdd}
             aria-label="new terminal"
             title="new terminal in this pane"
-            className="text-ink-dim hover:text-ink shrink-0 px-3 text-sm transition-colors"
+            className="text-ink-dim hover:text-ink border-line shrink-0 border-b px-3 text-sm transition-colors"
             style={{ transitionDuration: 'var(--dur-micro)' }}
           >
             +
           </button>
         )}
       </div>
+      {/* Carries the line across whatever is left of the strip. */}
+      <div className="border-line min-w-0 flex-1 border-b" />
     </div>
   )
 }

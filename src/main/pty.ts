@@ -66,7 +66,20 @@ function flush(id: string, session: Session): void {
   emitTo(session.owner, 'pty:data', { id, data })
 }
 
-export function startPty(cols: number, rows: number, owner: WebContents): { id: string } {
+/**
+ * What to call it in a tab. The executable's stem, so `powershell.exe` reads as
+ * `powershell` and `/bin/bash` as `bash`.
+ */
+function shellName(shell: string): string {
+  const base = shell.split(/[\\/]/).pop() ?? shell
+  return base.replace(/\.(exe|cmd|bat)$/i, '')
+}
+
+export function startPty(
+  cols: number,
+  rows: number,
+  owner: WebContents
+): { id: string; shell: string } {
   const id = `pty-${++counter}`
   const shell = defaultShell()
 
@@ -119,7 +132,7 @@ export function startPty(cols: number, rows: number, owner: WebContents): { id: 
     emitTo(session.owner, 'pty:exit', { id, code: exitCode })
   })
 
-  return { id }
+  return { id, shell: shellName(shell) }
 }
 
 export function writePty(id: string, data: string): void {

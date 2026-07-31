@@ -45,15 +45,19 @@ type Props = {
    * The pane is expected to stay: this reports, it does not close.
    */
   onExit: (code: number) => void
+  /** The shell actually spawned, so the tab can be named after it. */
+  onStart: (shell: string) => void
 }
 
-export function TerminalView({ visible, onExit }: Props): React.JSX.Element {
+export function TerminalView({ visible, onExit, onStart }: Props): React.JSX.Element {
   const host = useRef<HTMLDivElement>(null)
   const term = useRef<Terminal | null>(null)
   const fit = useRef<FitAddon | null>(null)
   const sessionId = useRef<string | null>(null)
   const latestExit = useRef(onExit)
   latestExit.current = onExit
+  const latestStart = useRef(onStart)
+  latestStart.current = onStart
 
   useEffect(() => {
     if (host.current === null) return
@@ -282,6 +286,7 @@ export function TerminalView({ visible, onExit }: Props): React.JSX.Element {
       const id = started.value.id
       sessionId.current = id
       attached = id
+      latestStart.current(started.value.shell)
 
       for (const payload of early) {
         if (payload.id === id) consume(id, payload.data)
