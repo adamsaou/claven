@@ -57,6 +57,9 @@ export function TerminalView({ visible, onExit }: Props): React.JSX.Element {
 
   useEffect(() => {
     if (host.current === null) return
+    // Captured once: the cleanup runs after the ref may have been cleared, and
+    // removing a listener from null is not a thing.
+    const element = host.current
 
     const terminal = new Terminal({
       fontFamily: "'JetBrains Mono', ui-monospace, Consolas, monospace",
@@ -70,32 +73,95 @@ export function TerminalView({ visible, onExit }: Props): React.JSX.Element {
       allowProposedApi: true
     })
     /**
-     * Let the window's own shortcuts out of the terminal.
+     * Copy takes the selection with it.
+     *
+     * This is what makes Ctrl+C safe to bind at all: the selection is consumed,
+     * so pressing it twice copies once and then interrupts. Leaving the
+     * selection behind would mean a stray highlight silently disarms your
+     * interrupt, and finding that out mid-runaway-process is the worst possible
+     * moment.
+     */
+    const copySelection = (): boolean => {
+      if (!terminal.hasSelection()) return false
+      const text = terminal.getSelection()
+      terminal.clearSelection()
+      if (text.length === 0) return false
+      void window.claven.invoke('clipboard:write', { text })
+      return true
+    }
+
+    const paste = (): void => {
+      void window.claven.invoke('clipboard:read', {}).then((result) => {
+        // paste() rather than input(): it applies bracketed-paste wrapping, so
+        // a shell that supports it knows the text was pasted rather than typed
+        // and does not run each line as it arrives.
+        if (result.ok && result.value.text.length > 0) terminal.paste(result.value.text)
+      })
+    }
+
+    /**
+     * What the terminal keeps, and what it lets through.
      *
      * xterm calls `stopPropagation` on any key it handles, and it handles every
      * control character. `Ctrl+J` is one of them, so with the terminal focused
      * it went to the shell as a line feed and the shortcut that hides the
-     * terminal did nothing from inside the terminal. Which is the one place you
-     * would press it.
+     * terminal did nothing from inside the terminal, which is the one place you
+     * would press it. Returning false tells xterm to leave the event alone, so
+     * it bubbles to the window listener.
      *
-     * Returning false tells xterm to leave the event alone, so it bubbles to
-     * the window listener. Kept to the shortcuts that only move panels and
-     * focus around. Anything with a real meaning at a prompt stays the shell's:
-     * Ctrl+C is an interrupt, Ctrl+W deletes a word, Ctrl+S freezes output, and
-     * an editor that quietly ate those would be worse than one with no
-     * shortcuts at all.
+     * Let through: the shortcuts that only move panels and focus around, plus
+     * copy and paste. Kept for the shell: Ctrl+W deletes a word and Ctrl+S
+     * freezes output, and an editor that quietly ate those would be worse than
+     * one with no shortcuts at all. Ctrl+C is the one that goes both ways, and
+     * is explained where it is handled.
      */
     terminal.attachCustomKeyEventHandler((event) => {
       if (event.type !== 'keydown') return true
       if (!event.ctrlKey && !event.metaKey) return true
       const key = event.key.toLowerCase()
-      if (event.shiftKey) return key !== 'p' && key !== 'f'
+
+      if (event.shiftKey) {
+        // The explicit pair, for when you would rather not think about whether
+        // anything is selected.
+        if (key === 'c') return !copySelection()
+        if (key === 'v') {
+          paste()
+          return false
+        }
+        return key !== 'p' && key !== 'f'
+      }
+
+      /**
+       * Ctrl+C copies a selection and interrupts when there is none.
+       *
+       * This amends the rule written a few hours earlier that Ctrl+C always
+       * stays the shell's. Settled 2026-07-31 by Adam, on the grounds that it
+       * is what he already uses elsewhere. The interrupt is not weakened: with
+       * nothing selected the key reaches the shell exactly as before, and a
+       * copy always clears the selection so the next press interrupts.
+       */
+      if (key === 'c') return !copySelection()
+
       return key !== 'j' && key !== 'b' && key !== 'p'
     })
 
+    /**
+     * Right-click copies if something is selected, and pastes if not.
+     *
+     * One button for both, so there is nothing to remember. Windows terminals
+     * have behaved this way for long enough that it is muscle memory, and the
+     * alternative is a menu in the way of a two-word operation.
+     */
+    const onContextMenu = (event: MouseEvent): void => {
+      event.preventDefault()
+      if (!copySelection()) paste()
+    }
+
+    element.addEventListener('contextmenu', onContextMenu)
+
     const fitAddon = new FitAddon()
     terminal.loadAddon(fitAddon)
-    terminal.open(host.current)
+    terminal.open(element)
     term.current = terminal
     fit.current = fitAddon
 
@@ -113,8 +179,6 @@ export function TerminalView({ visible, onExit }: Props): React.JSX.Element {
      * after they mount, so this is the normal case now, not a slow-machine one.
      */
     const sized = new Promise<void>((resolve) => {
-      const element = host.current
-      if (element === null) return
       if (element.offsetWidth > 0 && element.offsetHeight > 0) {
         resolve()
         return
@@ -233,6 +297,7 @@ export function TerminalView({ visible, onExit }: Props): React.JSX.Element {
 
     return () => {
       disposed = true
+      element.removeEventListener('contextmenu', onContextMenu)
       pending?.disconnect()
       for (const off of unsubscribers) off()
       if (sessionId.current !== null) {

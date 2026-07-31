@@ -171,9 +171,10 @@ column wide, which no later resize repairs, so `TerminalView` waits for a real
 size before spawning. And xterm calls `stopPropagation` on every control
 character it handles, so `Ctrl+J` reached the shell as a line feed and the
 shortcut that hides the terminal did nothing from inside a terminal. Shortcuts
-that only move panels around are now passed through; `Ctrl+C`, `Ctrl+W` and
-`Ctrl+S` stay the shell's, because an editor that ate an interrupt would be
-worse than one with no shortcuts.
+that only move panels around are passed through; `Ctrl+W` and `Ctrl+S` stay the
+shell's, because an editor that ate a word-delete or an output-freeze would be
+worse than one with no shortcuts. `Ctrl+C` was in that list until 2026-07-31,
+see the clipboard note below.
 
 **The layout lives in the session file, not localStorage.** It started in
 localStorage, on the reasoning that it is renderer-only chrome. The drive suite
@@ -219,6 +220,24 @@ Two smaller ones with it: nothing listened for `error` on the pty socket, and
 node-pty rethrows when nobody does, which in main is an uncaught exception that
 takes the editor and every unsaved buffer with it. And shell output went through
 `emit`, which broadcasts to every window. Both fixed.
+
+**Copy and paste, and the one rule this amended.** `Ctrl+C` copies when text is
+selected and interrupts when nothing is. That reverses the rule written the same
+day that `Ctrl+C` always belongs to the shell. Amended 2026-07-31 by Adam, on
+the grounds that it is what he already uses elsewhere, and the interrupt is not
+actually weakened: with nothing selected the key reaches the shell exactly as
+before, and **a copy always clears the selection**, so the second press
+interrupts. That last part is the whole safety argument. Without it a stray
+highlight silently disarms your interrupt, and mid-runaway-process is the worst
+possible moment to discover that. There is a check for it: the drive suite
+interrupts a running counter and asserts it stopped.
+
+Right-click copies a selection and pastes when there is none, so there is
+nothing to remember. `Ctrl+Shift+C` and `Ctrl+Shift+V` are the explicit pair.
+The clipboard goes through main rather than `navigator.clipboard`, which would
+mean depending on a secure context and on Chromium's clipboard-read permission
+behaving the same under a `file://` origin in a packaged build as over http in
+dev. Electron's own clipboard has neither question attached.
 
 **Still open, and deliberately so.** No shell picker: Windows is hardcoded to
 PowerShell, and the drive suite types PowerShell at it, so changing the default

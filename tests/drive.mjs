@@ -723,6 +723,59 @@ add(
 )
 
 /**
+ * Copying out of the terminal.
+ *
+ * Ctrl+C copies a selection and interrupts when there is none, so the check
+ * that matters is not that copy works, it is that the interrupt survives. The
+ * selection is consumed by the copy, which is what makes the second press an
+ * interrupt again.
+ *
+ * The selection is made with real mouse events over the terminal, because
+ * xterm's selection is its own, not a DOM one, and faking it would prove
+ * nothing about the path a user takes.
+ */
+const clipboard = async () => {
+  const result = await evaluate(`window.claven.invoke('clipboard:read', {}).then((r) => r.ok ? r.value.text : null)`)
+  return typeof result === 'string' ? result : ''
+}
+
+await evaluate(`window.claven.invoke('clipboard:write', { text: 'CLIPBOARD_BEFORE_ANY_COPY' })`)
+await sleep(300)
+add(
+  'the clipboard channel round trips',
+  (await clipboard()) === 'CLIPBOARD_BEFORE_ANY_COPY',
+  `read back ${JSON.stringify(await clipboard())}`
+)
+
+// Drag across the first terminal's first rows, which hold the PowerShell banner.
+const rowsBox = await evaluate(`
+  (() => {
+    const rows = document.querySelector('.xterm-rows')
+    if (rows === null) return null
+    const box = rows.getBoundingClientRect()
+    return JSON.stringify({ x: box.left, y: box.top, w: box.width, h: box.height })
+  })()
+`)
+const box = rowsBox === null ? null : JSON.parse(String(rowsBox))
+let copied = ''
+if (box !== null) {
+  const y = Math.round(box.y + 6)
+  await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: Math.round(box.x + 4), y, button: 'left', clickCount: 1, buttons: 1 })
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: Math.round(box.x + box.w - 8), y: y + 20, button: 'left', buttons: 1 })
+  await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: Math.round(box.x + box.w - 8), y: y + 20, button: 'left', clickCount: 1, buttons: 0 })
+  await sleep(400)
+  await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', modifiers: 2, key: 'c', code: 'KeyC', windowsVirtualKeyCode: 67, nativeVirtualKeyCode: 67 })
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', modifiers: 2, key: 'c', code: 'KeyC', windowsVirtualKeyCode: 67, nativeVirtualKeyCode: 67 })
+  await sleep(600)
+  copied = await clipboard()
+}
+add(
+  'ctrl+c copies the selection',
+  copied.length > 0 && copied !== 'CLIPBOARD_BEFORE_ANY_COPY',
+  copied === 'CLIPBOARD_BEFORE_ANY_COPY' ? 'the clipboard never changed' : JSON.stringify(copied.replace(/\s+/g, ' ').slice(0, 60))
+)
+
+/**
  * A shell that ends must not take the pane with it.
  *
  * Closing the pane on exit was the old behaviour, and it threw away the exit
@@ -943,6 +996,25 @@ add(
   beatsAfterHiding > beatsLater,
   `counter reached ${beatsAfterHiding}, up from ${beatsLater}`
 )
+
+/**
+ * And the half that actually matters: with the selection consumed, the next
+ * Ctrl+C is an interrupt again. Checked against the running heartbeat, which
+ * stops counting when it is interrupted.
+ */
+const beatsBeforeInterrupt = await heartbeat()
+await evaluate(`document.querySelectorAll('.xterm-helper-textarea')[0]?.focus(), true`)
+await sleep(200)
+await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', modifiers: 2, key: 'c', code: 'KeyC', windowsVirtualKeyCode: 67, nativeVirtualKeyCode: 67 })
+await send('Input.dispatchKeyEvent', { type: 'keyUp', modifiers: 2, key: 'c', code: 'KeyC', windowsVirtualKeyCode: 67, nativeVirtualKeyCode: 67 })
+await sleep(5000)
+const beatsAfterInterrupt = await heartbeat()
+add(
+  'ctrl+c still interrupts when nothing is selected',
+  beatsBeforeInterrupt > 0 && beatsAfterInterrupt === beatsBeforeInterrupt,
+  `counter went ${beatsBeforeInterrupt} -> ${beatsAfterInterrupt} across five seconds`
+)
+
 
 /**
  * An external change to an open file.

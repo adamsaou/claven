@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog, shell } from 'electron'
+import { BrowserWindow, clipboard, dialog, shell } from 'electron'
 import { mkdir, open as openFile, readdir, rename, stat } from 'node:fs/promises'
 import { dirname, join, relative, sep } from 'node:path'
 import { handle, emit, assertEveryChannelHandled } from './ipc'
@@ -237,6 +237,15 @@ export function registerHandlers(): void {
     setPtyPaused(request.id, request.paused)
     return {}
   })
+
+  handle('clipboard:write', (request) => {
+    // Empty writes are dropped rather than clearing the clipboard. Copying with
+    // nothing selected should do nothing, not destroy what you copied earlier.
+    if (request.text.length > 0) clipboard.writeText(request.text)
+    return {}
+  })
+
+  handle('clipboard:read', () => ({ text: clipboard.readText() }))
 
   handle('buffer:sync', async (request) => {
     await syncBuffers(request.buffers)

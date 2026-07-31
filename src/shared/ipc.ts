@@ -215,6 +215,25 @@ export type IpcContract = {
   }
 
   /**
+   * The system clipboard, through main rather than through `navigator.clipboard`.
+   *
+   * The web API would mean depending on a secure context and on Chromium's
+   * clipboard-read permission behaving the same way under a `file://` origin in
+   * a packaged build as it does over http in dev. Electron's own clipboard has
+   * neither question attached to it, and the renderer cannot import electron,
+   * so it comes across the contract like everything else.
+   */
+  'clipboard:write': {
+    request: { text: string }
+    response: Record<string, never>
+  }
+
+  'clipboard:read': {
+    request: Record<string, never>
+    response: { text: string }
+  }
+
+  /**
    * Start a search over the workspace. Returns the id every later message
    * carries; answers arrive on `search:matches` and always end with
    * `search:done`.
@@ -340,6 +359,8 @@ export const IPC_CHANNELS = [
   'pty:resize',
   'pty:kill',
   'pty:setPaused',
+  'clipboard:write',
+  'clipboard:read',
   'search:start',
   'search:cancel',
   'buffer:sync',
