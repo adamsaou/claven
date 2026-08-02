@@ -130,6 +130,22 @@ export default function App(): React.JSX.Element {
   const active = docFor(activePath)
   const dirty = active !== null && active.content !== active.saved
   const openDocIds = useMemo(() => docs.map((doc) => doc.path), [docs])
+  /**
+   * Dirty buffers, keyed the way search reports files: workspace-relative,
+   * forward slashes. Sent with every query so results describe what is on
+   * screen rather than what was last saved.
+   */
+  const unsavedForSearch = useMemo(() => {
+    if (root === null) return {}
+    const map: Record<string, string> = {}
+    for (const doc of docs) {
+      if (doc.content === doc.saved) continue
+      if (!isUnder(doc.path, root)) continue
+      map[doc.path.slice(root.length + 1).split('\\').join('/')] = doc.content
+    }
+    return map
+  }, [docs, root])
+
   /** Filenames that more than one open file shares. Nothing else needs a suffix. */
   const ambiguousNames = useMemo(() => {
     const seen = new Map<string, number>()
@@ -1113,6 +1129,7 @@ export default function App(): React.JSX.Element {
             >
               <SearchPanel
                 root={root}
+                unsaved={unsavedForSearch}
                 onOpenHit={(file, line, column) => {
                   if (root === null) return
                   const path = `${root}/${file}`

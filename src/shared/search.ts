@@ -23,6 +23,19 @@ export type SearchQuery = {
   caseSensitive: boolean | null
   wholeWord: boolean
   regex: boolean
+  /**
+   * Unsaved buffers, keyed by workspace-relative path with forward slashes.
+   *
+   * Search reads what is on disk, which is right for the thousands of files
+   * you are not looking at and wrong for the handful you are. Edit a file,
+   * do not save, search it, and it answered about the version you had already
+   * moved on from. These are used instead of the file wherever they appear, so
+   * results describe what is on your screen.
+   *
+   * Sent with the query rather than pushed separately: a search is a question
+   * asked at a moment, and the buffers are part of the question.
+   */
+  unsaved: Record<string, string>
 }
 
 export type SearchMatch = {

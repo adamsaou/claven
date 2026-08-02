@@ -257,6 +257,7 @@ export async function runSmokeTest(window: BrowserWindow): Promise<number> {
     caseSensitive: boolean | null
     wholeWord: boolean
     regex: boolean
+    unsaved?: Record<string, string>
   }): Promise<{ matches: Array<Record<string, unknown>>; done: Record<string, unknown> } | null> =>
     evaluate(`
       new Promise((resolve) => {
@@ -288,6 +289,42 @@ export async function runSmokeTest(window: BrowserWindow): Promise<number> {
     'search finds a literal across the workspace',
     literalSearch !== null && literalSearch.matches.length > 0,
     literalSearch === null ? 'timed out' : `${literalSearch.matches.length} matches in ${String(literalSearch.done.filesSearched)} files`
+  )
+
+  /**
+   * An unsaved buffer answers for its file.
+   *
+   * Search reads disk, which is right for the thousands of files you are not
+   * looking at and wrong for the one you are editing. Two halves: the buffer's
+   * text is found, and the file's own text is not, because the buffer replaced
+   * it rather than being searched alongside it.
+   */
+  const buffered = await runSearch({
+    pattern: 'BUFFER_ONLY_SENTINEL',
+    caseSensitive: null,
+    wholeWord: false,
+    regex: false,
+    unsaved: { 'fixtures/lf.txt': 'BUFFER_ONLY_SENTINEL is not on disk\n' }
+  })
+  add(
+    'search reads an unsaved buffer instead of the file',
+    buffered !== null && buffered.matches.length === 1 &&
+      String(buffered.matches[0]?.file) === 'fixtures/lf.txt',
+    buffered === null ? 'timed out' : `${buffered.matches.length} match(es) in ${buffered.matches.map((m) => String(m.file)).join(', ') || 'nothing'}`
+  )
+
+  const shadowed = await runSearch({
+    pattern: 'alpha',
+    caseSensitive: null,
+    wholeWord: false,
+    regex: false,
+    unsaved: { 'fixtures/lf.txt': 'nothing to see here\n' }
+  })
+  const shadowedHit = shadowed?.matches.some((m) => String(m.file) === 'fixtures/lf.txt') ?? true
+  add(
+    'the buffer replaces the file rather than being searched as well as it',
+    shadowed !== null && !shadowedHit,
+    shadowed === null ? 'timed out' : `lf.txt ${shadowedHit ? 'still matched from disk' : 'answered from the buffer'}`
   )
 
   /**

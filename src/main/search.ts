@@ -156,7 +156,7 @@ export function startSearch(query: SearchQuery, sender: WebContents): { id: stri
   const controller = new AbortController()
   runs.set(id, { controller })
 
-  void run(id, root, re, crStripped, controller.signal, sender)
+  void run(id, root, re, crStripped, query.unsaved ?? {}, controller.signal, sender)
   return { id }
 }
 
@@ -165,6 +165,8 @@ async function run(
   root: string,
   re: RegExp,
   crStripped: boolean,
+  /** Buffers that answer for their file. See `unsaved` in the query type. */
+  unsaved: Record<string, string>,
   signal: AbortSignal,
   sender: WebContents
 ): Promise<void> {
@@ -221,6 +223,16 @@ async function run(
         const file = next.value
 
         try {
+          // An unsaved buffer answers for its file. Read before the file is
+          // opened at all, so a dirty file is never touched on disk and a
+          // search cannot race a save.
+          const buffered = unsaved[file]
+          if (buffered !== undefined) {
+            filesSearched += 1
+            if (!scan(file, normalizeToLf(buffered), re, skipped, push)) return
+            continue
+          }
+
           const handle = await open(join(root, file), 'r')
           let buffer: Buffer
           try {

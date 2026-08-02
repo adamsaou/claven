@@ -103,7 +103,11 @@ export function useSearch(query: SearchQuery, root: string | null): SearchState 
     // Compared by value: the query object is rebuilt on every render, so using
     // it directly would restart the search on every keystroke of any other
     // field on the page.
-  }, [query.pattern, query.caseSensitive, query.wholeWord, query.regex, root])
+    // `query` is compared by identity here on purpose: SearchPanel already
+    // memoises it, including a key over the unsaved buffers, so a new object
+    // means a genuinely different question.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, root])
 
   // A run against a workspace the user has left is worse than useless.
   useEffect(

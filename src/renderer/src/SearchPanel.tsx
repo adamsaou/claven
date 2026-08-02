@@ -18,6 +18,11 @@ import type { SearchMatch, SearchQuery } from '../../shared/search'
  */
 
 type Props = {
+  /**
+   * Unsaved buffers, workspace-relative with forward slashes, so a search
+   * answers about what is on screen rather than what was last written.
+   */
+  unsaved: Record<string, string>
   root: string | null
   onOpenHit: (file: string, line: number, column: number) => void
 }
@@ -53,7 +58,7 @@ function Toggle({
   )
 }
 
-export function SearchPanel({ root, onOpenHit }: Props): React.JSX.Element {
+export function SearchPanel({ root, unsaved, onOpenHit }: Props): React.JSX.Element {
   const [pattern, setPattern] = useState('')
   const [caseSensitive, setCaseSensitive] = useState<boolean | null>(null)
   const [wholeWord, setWholeWord] = useState(false)
@@ -62,9 +67,15 @@ export function SearchPanel({ root, onOpenHit }: Props): React.JSX.Element {
   const input = useRef<HTMLInputElement>(null)
   const list = useRef<HTMLDivElement>(null)
 
+  // Keyed on the paths and lengths rather than the object: the map is rebuilt
+  // on every keystroke, and a new identity here restarts the search.
+  const unsavedKey = Object.entries(unsaved)
+    .map(([path, text]) => `${path}:${text.length}`)
+    .join(',')
   const query: SearchQuery = useMemo(
-    () => ({ pattern, caseSensitive, wholeWord, regex }),
-    [pattern, caseSensitive, wholeWord, regex]
+    () => ({ pattern, caseSensitive, wholeWord, regex, unsaved }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pattern, caseSensitive, wholeWord, regex, unsavedKey]
   )
   const state = useSearch(query, root)
 
