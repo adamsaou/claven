@@ -272,6 +272,28 @@ URLs, no scrollback search, no renderer addon. Every one of those needs a new
 adds one: `@xterm/addon-webgl` deletes the `.xterm-rows` element that four drive
 checks read, so it is not a free swap.
 
+### Packaging
+
+`npm run dist` produces an installer in `release/`. Windows is NSIS, per-user, so
+it never asks for an administrator prompt: Claven has no business writing to
+Program Files. Linux is an AppImage. macOS is configured for completeness and is
+untested, unsigned and unnotarised, per the platforms row above.
+
+Nothing is code-signed and there is no auto-update. Both need a decision that
+has not been made: signing needs a certificate, and updating needs somewhere to
+publish to. Wiring either before the licence question is answered would be
+building on an assumption.
+
+**`npmRebuild: false`, deliberately.** electron-builder runs `@electron/rebuild`
+by default, which invokes node-gyp, which fails here with "Could not find any
+Visual Studio installation" and would mean every contributor needs Build Tools
+to produce an installer. node-pty ships prebuilt N-API binaries that load in
+Electron unchanged, which is why that is unnecessary, and it is the same fact
+the terminal was written on top of. The claim is only worth something if the
+shipped app can actually open a shell, so `npm run verify:dist` drives the
+packaged binary and checks exactly that. Run it after touching the packaging
+config; the drive suite runs the dev build and cannot see this.
+
 ### Licensing — read before touching the license or accepting a PR
 
 The plan is to sell this eventually. Two things follow, and they pull opposite ways.

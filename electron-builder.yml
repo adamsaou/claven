@@ -1,0 +1,66 @@
+# Packaging. Turns the repo into something you can install and open from the
+# start menu, which is the difference between a project and an editor.
+#
+# Deliberately minimal: one target per platform, no auto-update, no publish.
+# Auto-update needs somewhere to publish to and a signing story, and neither is
+# decided. See the licensing note in CLAUDE.md before wiring either.
+appId: dev.claven.app
+productName: Claven
+copyright: Copyright (C) 2026 adamsaou
+
+directories:
+  buildResources: build
+  output: release
+
+# Do not rebuild native modules from source.
+#
+# node-pty ships prebuilt N-API binaries that load in Electron unchanged, which
+# was checked before the terminal was written and is why installing Claven does
+# not require a compiler. electron-builder runs @electron/rebuild by default,
+# which invokes node-gyp, which fails here with "Could not find any Visual
+# Studio installation" and would force every contributor to install Build Tools
+# to produce an installer. The check that this stays true is the packaged app
+# opening a shell, which the drive suite covers.
+npmRebuild: false
+
+# Only what the app needs at runtime. `out/` is what electron-vite produced;
+# everything else in the repo is source, tests and the website.
+files:
+  - out/**/*
+  - package.json
+
+# node-pty is a native module and cannot be read from inside an asar archive:
+# it has to exist as a real file on disk for the loader to open it. Left
+# unpacked rather than disabling asar entirely, which would unpack everything.
+asarUnpack:
+  - '**/node_modules/node-pty/**'
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.ico
+
+nsis:
+  # A per-user install, so it does not need an administrator prompt. Claven has
+  # no business writing to Program Files.
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Claven
+
+linux:
+  target:
+    - AppImage
+  category: Development
+  icon: build/icons
+
+# macOS is built here for completeness and is untested: see CLAUDE.md. Nothing
+# is signed or notarised, so a build from this config will not open on a Mac
+# without the user overriding Gatekeeper.
+mac:
+  target:
+    - dmg
+  category: public.app-category.developer-tools

@@ -164,3 +164,6 @@ coturn.conf
 secrets.json
 credentials.json
 .credentials.json
+
+# Packaged builds. An installer is ~110 MB and is produced from source.
+/release

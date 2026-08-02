@@ -13,6 +13,8 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
+    "dist": "npm run build && electron-builder --publish never",
+    "verify:dist": "node tests/verify-packaged.mjs",
     "start": "electron-vite preview",
     "smoke": "electron-vite build && electron . --smoke",
     "drive": "electron-vite build && node tests/drive.mjs",
@@ -56,6 +58,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.2.0",
     "electron": "^43.2.0",
+    "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "png-to-ico": "^3.0.2",
     "tailwindcss": "^4.3.3",
