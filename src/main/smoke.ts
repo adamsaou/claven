@@ -1,9 +1,11 @@
+import { spawn } from 'node:child_process'
 import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { BrowserWindow } from 'electron'
 import { setWorkspaceRoot } from './workspace'
 import type { FileMeta, ReadResult } from '../shared/files'
+import { lineChanges } from '../shared/linediff'
 import {
   activateItem,
   addItem,
@@ -807,6 +809,254 @@ export async function runSmokeTest(window: BrowserWindow): Promise<number> {
   add('no sequence of layout operations reaches a tree the UI cannot draw',
     fuzzFailure === null,
     fuzzFailure ?? `${sequences} sequences, ${operations} operations, invariants held`)
+
+  // ---- the line diff, for the gutter ------------------------------------
+  //
+  // Pure, so it is checked here rather than by driving a window. The gutter is
+  // the most-glanced-at thing in an editor and the least deliberately looked
+  // at, which is the combination that hides a wrong answer for months.
+
+  const marks = (before: string | null, after: string): string =>
+    lineChanges(before, after)
+      .map((change) => `${change.line}${change.kind[0]}`)
+      .join(' ')
+
+  /** Built from an array so the test source has no escape sequences to get wrong. */
+  const doc = (...lines: string[]): string => lines.join('\n') + '\n'
+
+  add('an unchanged file has no marks',
+    marks(doc('a', 'b', 'c'), doc('a', 'b', 'c')) === '',
+    `marks: ${marks(doc('a', 'b', 'c'), doc('a', 'b', 'c')) || 'none'}`)
+
+  add('a file with no baseline is entirely added',
+    marks(null, doc('a', 'b')) === '1a 2a',
+    marks(null, doc('a', 'b')))
+
+  add('an inserted line is added, and only that line',
+    marks(doc('a', 'c'), doc('a', 'b', 'c')) === '2a',
+    marks(doc('a', 'c'), doc('a', 'b', 'c')))
+
+  add('a changed line is modified, not added',
+    marks(doc('a', 'b', 'c'), doc('a', 'B', 'c')) === '2m',
+    marks(doc('a', 'b', 'c'), doc('a', 'B', 'c')))
+
+  // Marked on the line the deleted text sat after, since there is no line left
+  // to point at. See the note on LineChange.
+  add('a deletion marks the line it sat after',
+    marks(doc('a', 'b', 'c'), doc('a', 'c')) === '1r',
+    marks(doc('a', 'b', 'c'), doc('a', 'c')))
+
+  add('a deletion from the very top reports line one',
+    marks(doc('a', 'b', 'c'), doc('b', 'c')) === '1r',
+    marks(doc('a', 'b', 'c'), doc('b', 'c')))
+
+  add('replacing one line with two is one modified and one added',
+    marks(doc('a', 'b', 'c'), doc('a', 'B', 'B2', 'c')) === '2m 3a',
+    marks(doc('a', 'b', 'c'), doc('a', 'B', 'B2', 'c')))
+
+  add('a missing trailing newline is not a phantom last line',
+    marks('a\nb', doc('a', 'b')) === '',
+    `marks: ${marks('a\nb', doc('a', 'b')) || 'none'}`)
+
+  add('an edit at the very first line is found',
+    marks(doc('a', 'b'), doc('A', 'b')) === '1m',
+    marks(doc('a', 'b'), doc('A', 'b')))
+
+  // The case the prefix and suffix trimming exists for. One edit in a large
+  // file must mark one line and must not walk the whole thing to say so.
+  const big = doc(...Array.from({ length: 4000 }, (_, index) => `line ${index}`))
+  const edited = big.replace('line 2000\n', 'line 2000 changed\n')
+  const startedDiff = Date.now()
+  const bigMarks = marks(big, edited)
+  const bigTook = Date.now() - startedDiff
+  add('one edit in a four thousand line file marks one line, quickly',
+    bigMarks === '2001m' && bigTook < 250,
+    `${bigMarks} in ${bigTook}ms`)
+
+  /**
+   * The CRLF case, which is the one that will actually happen.
+   *
+   * git hands back object database bytes, and this repo marks tests/fixtures
+   * `-text binary` in .gitattributes, so those blobs keep the endings they were
+   * committed with. Measured against the real bytes before this was fixed: a
+   * CRLF baseline against its own unmodified buffer reported every line
+   * modified, and a lone-CR baseline collapsed to one line.
+   */
+  add('a CRLF baseline against an LF buffer is not a whole-file change',
+    marks('a\r\nb\r\nc\r\n', doc('a', 'b', 'c')) === '',
+    `marks: ${marks('a\r\nb\r\nc\r\n', doc('a', 'b', 'c')) || 'none'}`)
+
+  add('a lone-CR baseline is not one enormous line',
+    marks('a\rb\rc\r', doc('a', 'b', 'c')) === '',
+    `marks: ${marks('a\rb\rc\r', doc('a', 'b', 'c')) || 'none'}`)
+
+  /**
+   * Lines that vanish under a replacement must not be silent. Five lines
+   * becoming one used to report a single modified line and say nothing about
+   * the four that went.
+   */
+  add('lines lost to a shorter replacement are still reported',
+    marks(doc('a', 'x1', 'x2', 'x3', 'b'), doc('a', 'y', 'b')) === '2m 2r',
+    marks(doc('a', 'x1', 'x2', 'x3', 'b'), doc('a', 'y', 'b')))
+
+  add('an equal-length replacement reports no loss',
+    marks(doc('a', 'x', 'b'), doc('a', 'y', 'b')) === '2m',
+    marks(doc('a', 'x', 'b'), doc('a', 'y', 'b')))
+
+  // Empty and near-empty inputs, which is where an off-by-one hides.
+  add('empty against empty is no change',
+    marks('', '') === '',
+    `marks: ${marks('', '') || 'none'}`)
+
+  add('empty baseline against content is all added',
+    marks('', doc('a', 'b')) === '1a 2a',
+    marks('', doc('a', 'b')))
+
+  add('content emptied is reported as removed',
+    marks(doc('a', 'b'), '') === '1r',
+    marks(doc('a', 'b'), ''))
+
+  /**
+   * No mark may point past the end of the buffer. A gutter asked to draw on a
+   * line that does not exist is the failure that takes the editor down rather
+   * than looking wrong, so it is checked over a spread of shapes rather than
+   * one example.
+   */
+  const shapes: Array<[string, string]> = [
+    [doc('a', 'b', 'c'), doc('a')],
+    [doc('a', 'b', 'c'), ''],
+    [doc('a'), doc('a', 'b', 'c')],
+    [doc('a', 'b', 'c', 'd', 'e'), doc('e', 'd', 'c', 'b', 'a')],
+    [doc('x', 'x', 'x', 'x'), doc('x', 'x', 'x')],
+    [doc('a', 'b'), doc('b', 'a')],
+    ['', ''],
+    [doc('a'), '']
+  ]
+  let outOfRange: string | null = null
+  for (const [before, after] of shapes) {
+    const lines = after === '' ? 0 : after.split(/\r\n?|\n/).filter((_l, i, all) =>
+      i < all.length - 1 || all[i] !== '').length
+    for (const change of lineChanges(before, after)) {
+      if (change.line < 1 || change.line > Math.max(1, lines)) {
+        outOfRange = `${JSON.stringify(after)} has ${lines} lines, got a mark on ${change.line}`
+        break
+      }
+    }
+    if (outOfRange !== null) break
+  }
+  add('no mark ever points past the end of the buffer',
+    outOfRange === null,
+    outOfRange ?? `${shapes.length} shapes, every mark in range`)
+
+  // ---- git, against a real throwaway repository --------------------------
+  //
+  // Run against actual git rather than a stub. Every interesting behaviour here
+  // is a thing git does that the obvious command gets wrong, so a stub would
+  // only ever confirm what I already believed.
+
+  const repo = await mkdtemp(join(tmpdir(), 'claven-git-'))
+  const git = (...args: string[]): Promise<{ code: number; out: string }> =>
+    new Promise((resolve) => {
+      // A committer identity is passed explicitly. `git commit` fails with
+      // "Please tell me who you are" wherever user.name and user.email are
+      // unset, which is most CI machines.
+      const child = spawn(
+        'git',
+        ['-c', 'user.email=smoke@claven.dev', '-c', 'user.name=smoke', ...args],
+        { cwd: repo, windowsHide: true }
+      )
+      const chunks: Buffer[] = []
+      child.stdout.on('data', (chunk: Buffer) => chunks.push(chunk))
+      child.on('error', () => resolve({ code: -1, out: '' }))
+      child.on('close', (code) =>
+        resolve({ code: code ?? -1, out: Buffer.concat(chunks).toString('utf8') })
+      )
+    })
+
+  await git('init', '--quiet')
+  // Not assumed to be 'main'. init.defaultBranch is 'master' on this machine,
+  // and asserting either name would be asserting a local config value.
+  await git('checkout', '-q', '-B', 'smoke-branch')
+  await writeFile(join(repo, 'tracked.txt'), 'one\ntwo\nthree\n')
+  // Committed with CRLF and marked binary, so git stores the CR bytes verbatim.
+  // This is the case that made every line of an unmodified file read as changed.
+  await writeFile(join(repo, 'crlf.txt'), 'one\r\ntwo\r\nthree\r\n')
+  await writeFile(join(repo, '.gitattributes'), 'crlf.txt -text\n')
+  await git('add', '-A')
+  await git('commit', '--quiet', '-m', 'first')
+  await writeFile(join(repo, 'untracked.txt'), 'never committed\n')
+
+  await setWorkspaceRoot(repo)
+
+  const info = await invoke<Ok<{ isRepo: boolean; branch: string | null }> | Err>('git:info', {})
+  add('git:info reports the branch of a real repo',
+    info.ok && info.value.isRepo && info.value.branch === 'smoke-branch',
+    info.ok ? `isRepo=${info.value.isRepo}, branch=${String(info.value.branch)}` : 'invoke failed')
+
+  type Baseline = { state: string; content?: string }
+  const baselineOf = async (name: string): Promise<Baseline | null> => {
+    const result = await invoke<Ok<Baseline> | Err>('git:baseline', { path: join(repo, name) })
+    return result.ok ? result.value : null
+  }
+
+  const tracked = await baselineOf('tracked.txt')
+  add('a tracked file has its committed text as a baseline',
+    tracked?.state === 'tracked' && tracked.content === 'one\ntwo\nthree\n',
+    `${String(tracked?.state)}: ${JSON.stringify(tracked?.content ?? null)}`)
+
+  const untracked = await baselineOf('untracked.txt')
+  add('an untracked file is untracked, not an error and not empty',
+    untracked?.state === 'untracked',
+    String(untracked?.state))
+
+  const missing = await baselineOf('does-not-exist.txt')
+  add('a path git has never heard of is untracked rather than a failure',
+    missing?.state === 'untracked',
+    String(missing?.state))
+
+  /**
+   * The one that matters.
+   *
+   * `git cat-file` returns object database bytes with no filter applied, so a
+   * file marked `-text` keeps the CRLF it was committed with. The editor buffer
+   * is always LF. Without normalising the baseline in main, an untouched file
+   * shows every line modified, and a whole file lit up looks like a fetch bug
+   * rather than an encoding one.
+   */
+  const crlfBaseline = await baselineOf('crlf.txt')
+  add('a CRLF baseline comes back normalised to LF',
+    crlfBaseline?.state === 'tracked' && crlfBaseline.content === 'one\ntwo\nthree\n',
+    JSON.stringify(crlfBaseline?.content ?? null))
+
+  const crlfRead = await invoke<Ok<ReadResult> | Err>('fs:read', { path: join(repo, 'crlf.txt') })
+  const crlfBuffer = crlfRead.ok && crlfRead.value.kind === 'text' ? crlfRead.value.content : ''
+  add('an unmodified CRLF file shows no changes at all',
+    crlfBaseline?.state === 'tracked' &&
+      lineChanges(crlfBaseline.content ?? null, crlfBuffer).length === 0,
+    `${lineChanges(crlfBaseline?.content ?? null, crlfBuffer).length} marks on an untouched file`)
+
+  // A directory must not come back holding some file's contents. Without the
+  // guard, `ls-tree -r` returns every blob underneath and the first record gets
+  // silently treated as the answer.
+  const directory = await baselineOf('.')
+  add('a directory has no baseline rather than a wrong one',
+    directory?.state === 'none' || directory?.state === 'untracked',
+    `${String(directory?.state)}${directory?.content === undefined ? '' : ' WITH CONTENT'}`)
+
+  // And a workspace that is not a repo says so instead of failing.
+  const plain = await mkdtemp(join(tmpdir(), 'claven-nogit-'))
+  await writeFile(join(plain, 'a.txt'), 'hello\n')
+  await setWorkspaceRoot(plain)
+  const noRepo = await invoke<Ok<{ isRepo: boolean; branch: string | null }> | Err>('git:info', {})
+  add('a workspace that is not a repo reports so quietly',
+    noRepo.ok && !noRepo.value.isRepo && noRepo.value.branch === null,
+    noRepo.ok ? `isRepo=${noRepo.value.isRepo}` : 'invoke failed')
+
+  await rm(repo, { recursive: true, force: true }).catch(() => undefined)
+  await rm(plain, { recursive: true, force: true }).catch(() => undefined)
+  // Deliberately not restored to `scratch`: that directory was removed earlier
+  // in this run, and setWorkspaceRoot realpaths, so pointing at it throws
+  // ENOENT and takes the whole suite down after every check has passed.
 
   // ---- report ------------------------------------------------------------
 

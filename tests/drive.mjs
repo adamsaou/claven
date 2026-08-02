@@ -85,6 +85,28 @@ await writeFile(
   ['first', 'second', 'third', 'NEEDLE_ON_LINE_FOUR', 'fifth'].join('\n') + '\n'
 )
 
+/**
+ * A real repository, so the git gutter has something to say.
+ *
+ * Committed before the app opens, so every file starts clean and any bar that
+ * appears was caused by a check rather than by the fixture. The identity is
+ * passed explicitly because `git commit` fails wherever user.name and
+ * user.email are unset.
+ */
+const git = (...args) =>
+  new Promise((resolve) => {
+    const child = spawn(
+      'git',
+      ['-c', 'user.email=drive@claven.dev', '-c', 'user.name=drive', ...args],
+      { cwd: workspace, stdio: 'ignore' }
+    )
+    child.on('error', () => resolve(-1))
+    child.on('close', (code) => resolve(code ?? -1))
+  })
+await git('init', '--quiet')
+await git('add', '-A')
+await git('commit', '--quiet', '-m', 'fixtures')
+
 // Seeded rather than clicked: opening a folder means a native dialog, and CDP
 // cannot reach one.
 await writeFile(
@@ -534,9 +556,25 @@ const typeIntoTerminal = async (index, command) => {
 
 let shellOutput = null
 if (terminalPresent) {
-  // Wait for a prompt before typing, or the keystrokes go to a shell that has
-  // not finished starting and are silently dropped.
-  await sleep(2500)
+  /**
+   * Wait for the prompt, rather than guessing how long it takes.
+   *
+   * Keystrokes sent to a shell that has not finished starting are silently
+   * dropped, so this used to sleep 2500ms and hope. That guess held until the
+   * workspace became a real git repository, at which point the first prompt
+   * arrived late enough to miss the window and four terminal checks failed
+   * together, looking like the terminal had broken. Measured by removing the
+   * `git init` above: with it the checks fail, without it they pass.
+   *
+   * Polling for the prompt is both faster in the common case and correct in the
+   * slow one.
+   */
+  let prompted = false
+  for (let i = 0; i < 40 && !prompted; i += 1) {
+    await sleep(500)
+    const screen = await evaluate(`document.querySelector('.xterm-rows')?.innerText ?? ''`)
+    prompted = /PS .*>|\$ $|# $/.test(String(screen ?? ''))
+  }
   /**
    * One command, doing two jobs, because the harness only gets one.
    *
@@ -1175,6 +1213,52 @@ add(
   'clicking another container opens it again',
   reopened === true,
   reopened === true ? 'the tree came back' : 'the sidebar stayed closed'
+)
+
+/**
+ * The git gutter, on a file that is genuinely modified.
+ *
+ * a.txt has been edited by earlier checks and never saved, so the bar has to
+ * come from diffing the BUFFER against the commit. A gutter that only moved on
+ * save would show nothing here, which is the whole point of computing the diff
+ * in the renderer.
+ */
+await clickTab('a.txt')
+await sleep(600)
+const bars = await evaluate(`
+  JSON.stringify({
+    gutter: !!document.querySelector('.cm-changeGutter'),
+    modified: document.querySelectorAll('.cm-changeBar-modified').length,
+    added: document.querySelectorAll('.cm-changeBar-added').length,
+    removed: document.querySelectorAll('.cm-changeBar-removed').length
+  })
+`)
+const gutterState = JSON.parse(String(bars ?? '{}'))
+add(
+  'the gutter marks an unsaved edit without waiting for a save',
+  gutterState.gutter === true && gutterState.modified + gutterState.added > 0,
+  `gutter drawn: ${gutterState.gutter}, ${gutterState.modified} modified, ${gutterState.added} added, ${gutterState.removed} removed`
+)
+
+/**
+ * Deliberately no "a clean file has no bars" check here.
+ *
+ * Every fixture in this workspace carries deliberate edits from checks above,
+ * and the one that does not is entangled with which pane it was opened into and
+ * when. That made the assertion a measurement of fixture state rather than of
+ * the gutter. It is a pure-function property and smoke proves it properly:
+ * identical text yields no marks, and so does a CRLF baseline against its own
+ * LF buffer. Asserting it twice, badly, in the slower suite bought nothing.
+ */
+
+const branchShown = await evaluate(
+  `document.querySelector('footer')?.textContent?.includes('master') ||
+   document.querySelector('footer')?.textContent?.includes('main') || false`
+)
+add(
+  'the branch is in the status bar',
+  branchShown === true,
+  branchShown === true ? 'branch shown' : String(await evaluate(`document.querySelector('footer')?.textContent ?? ''`)).slice(0, 60)
 )
 
 add('the renderer logged nothing', problems.length === 0, problems.slice(0, 3).join(' | ') || 'clean')

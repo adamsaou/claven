@@ -26,6 +26,7 @@ export type IconKey =
   | 'cpp' | 'header' | 'typescript' | 'tsx' | 'javascript' | 'python' | 'java'
   | 'rust' | 'json' | 'markdown' | 'html' | 'css' | 'text' | 'binary' | 'file'
   | 'folder' | 'folderOpen' | 'explorer' | 'search' | 'run' | 'settings' | 'terminal'
+  | 'branch'
 
 const PATHS: Record<IconKey, React.JSX.Element> = {
   // Two increment crosses: ++. The widest, flattest silhouette in the set,
@@ -179,6 +180,18 @@ const PATHS: Record<IconKey, React.JSX.Element> = {
       <rect x="3" y="4" width="10" height="1" />
       <rect x="3" y="4" width="1" height="7" />
       <rect x="12" y="4" width="1" height="7" />
+    </>
+  ),
+  // Two nodes on a trunk with a line curving off to a third. Flat geometry and
+  // square joins, the same rule the mark follows.
+  branch: (
+    <>
+      <rect x="4" y="3" width="2" height="2" />
+      <rect x="4" y="11" width="2" height="2" />
+      <rect x="10" y="3" width="2" height="2" />
+      <rect x="4.5" y="5" width="1" height="6" />
+      <rect x="10.5" y="5" width="1" height="2" />
+      <path d="M10.5 7 L10.5 8 L5 8 L5 9 L4.5 9 L4.5 7.5 L10 7.5 L10 7 Z" />
     </>
   ),
   explorer: (

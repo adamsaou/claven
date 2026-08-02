@@ -32,7 +32,9 @@ import { html } from '@codemirror/lang-html'
 import { css } from '@codemirror/lang-css'
 import { rust } from '@codemirror/lang-rust'
 import { clavenDark } from './clavenDark'
+import { gitGutter, setChangedLines } from './gitGutter'
 import { lspExtensionFor } from './lsp'
+import type { LineChange } from '../../../shared/linediff'
 
 /**
  * THE ADAPTER. This is the only file in the app permitted to import
@@ -126,6 +128,17 @@ type Props = {
    * prop would be unchanged and the effect would not re-run.
    */
   revealAt?: { line: number; column: number; nonce: number }
+  /**
+   * Git change bars, in buffer line numbers.
+   *
+   * Carries its own `docId` rather than trusting the caller to change both
+   * props in the same render. The diff is computed asynchronously, so without
+   * the tag a render where the file changes can still hold the outgoing file's
+   * marks, and they would be painted onto the incoming document. Undefined
+   * means no answer yet, which is different from an empty array meaning no
+   * changes.
+   */
+  changedLines?: { docId: string; lines: readonly LineChange[] }
 }
 
 /** What has to survive a tab switch. Scroll is not part of EditorState, so it rides along. */
@@ -140,6 +153,7 @@ export function CodeMirrorEditor({
   onChange,
   onSave,
   onCursor,
+  changedLines,
   initialCursor,
   revealAt
 }: Props): React.JSX.Element {
@@ -178,6 +192,9 @@ export function CodeMirrorEditor({
         doc,
         extensions: [
           lineNumbers(),
+          // Before the line numbers, so the bars sit against the outer edge and
+          // the numbers do not move when one appears.
+          gitGutter(),
           highlightActiveLineGutter(),
           // Renders control characters and zero-width spaces as a visible
           // placeholder. They are invisible otherwise, and an invisible
@@ -335,6 +352,20 @@ export function CodeMirrorEditor({
       instance.dispatch({ changes: { from: 0, to: current.length, insert: value } })
     }
   }, [value, docId])
+
+  /**
+   * Push the change bars in.
+   *
+   * Placed after the reload-from-disk effect above rather than merely after the
+   * document swap: between the two, a reload would dispatch marks against the
+   * pre-reload document and put bars on lines that had just been replaced.
+   */
+  useEffect(() => {
+    const instance = view.current
+    if (instance === null || mounted.current !== docId) return
+    if (changedLines === undefined || changedLines.docId !== docId) return
+    instance.dispatch({ effects: setChangedLines.of(changedLines.lines) })
+  }, [changedLines, docId])
 
   // Jump to a search hit. Runs after the document swap above, so opening a
   // result in a file that was not yet on screen lands in the right place.

@@ -9,6 +9,7 @@ import { sendToLanguageServer, startLanguageServer, stopLanguageServer } from '.
 import { killPty, resizePty, setPtyPaused, startPty, writePty } from './pty'
 import { setWatchedFiles } from './watcher'
 import { restoreBuffers, syncBuffers } from './buffers'
+import { gitBaseline, gitInfo } from './git'
 import { cancelAllSearches, cancelSearch, startSearch } from './search'
 import { walkFiles, type WalkStats } from './walk'
 import type { DirEntry } from '../shared/files'
@@ -246,6 +247,10 @@ export function registerHandlers(): void {
   })
 
   handle('clipboard:read', () => ({ text: clipboard.readText() }))
+
+  handle('git:info', () => gitInfo())
+
+  handle('git:baseline', (request) => gitBaseline(request.path))
 
   handle('buffer:sync', async (request) => {
     await syncBuffers(request.buffers)

@@ -238,6 +238,26 @@ export type IpcContract = {
     response: { text: string }
   }
 
+  /** Which branch, and whether the workspace is a repo at all. */
+  'git:info': {
+    request: Record<string, never>
+    response: GitInfo
+  }
+
+  /**
+   * The committed text of one file, for the gutter to diff the buffer against.
+   *
+   * Returned already decoded and LF-normalised, so it can be handed straight to
+   * `lineChanges` alongside a buffer. That normalisation is main's job on
+   * purpose: git returns the object database bytes, which carry whatever
+   * encoding and line endings were committed, and a renderer that had to know
+   * that would be a second implementation of the file layer's judgement.
+   */
+  'git:baseline': {
+    request: { path: string }
+    response: GitBaseline
+  }
+
   /**
    * Start a search over the workspace. Returns the id every later message
    * carries; answers arrive on `search:matches` and always end with
@@ -299,6 +319,25 @@ export type IpcContract = {
 
 /** Where the language server is in its lifecycle. */
 export type LspState = 'stopped' | 'starting' | 'running' | 'failed'
+
+export type GitInfo = {
+  isRepo: boolean
+  /** The branch, or "detached at <hash>", or null when there is nothing to say. */
+  branch: string | null
+}
+
+/**
+ * Three states, not two.
+ *
+ * `untracked` is a real answer and a different one from `none`: a file git has
+ * never seen is entirely new, and the gutter says so. `none` means there is no
+ * opinion to offer, which covers not-a-repo, a directory, a submodule, a binary
+ * blob and anything too large to read.
+ */
+export type GitBaseline =
+  | { state: 'tracked'; content: string }
+  | { state: 'untracked' }
+  | { state: 'none' }
 
 /** What is worth restoring. Deliberately not the file contents — those live on disk. */
 export type Session = {
@@ -366,6 +405,8 @@ export const IPC_CHANNELS = [
   'pty:setPaused',
   'clipboard:write',
   'clipboard:read',
+  'git:info',
+  'git:baseline',
   'search:start',
   'search:cancel',
   'buffer:sync',

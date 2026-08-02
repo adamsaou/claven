@@ -316,6 +316,49 @@ how you tell which build you are running. There is no auto-update: closing
 Claven and running the new installer is the whole update story, and it is the
 honest one until publishing and signing are decided.
 
+### Git, and the trap in every obvious command
+
+No library. `git` is on the PATH of anyone with a repo to open, a native binding
+is another module to package, and a pure-JS reimplementation is a second opinion
+about what your repository contains. The cost is a process per question, about
+90ms. Everything below was measured against the real binary, because the
+command everyone reaches for is wrong in each case.
+
+**The gutter diffs your buffer, not the file.** Main supplies the committed text
+and the renderer does the diff, so bars move as you type. A gutter that only
+moved on save would describe your last save, which is the bug search had until
+it was fixed.
+
+**`git cat-file` returns object database bytes with no filter applied**, so the
+baseline carries whatever encoding and line endings were committed. This repo
+marks `tests/fixtures/** -text`, so those blobs keep CRLF, and the editor buffer
+is always LF: without normalising, every line of an untouched file reads as
+modified, and a lone-CR file collapses to a single line. The fix is to put the
+baseline through the same `classifyBytes` then `decodeText` then `normalizeToLf`
+pipeline `fs:read` uses, in main, so the contract can promise LF. `--filters`
+and `git checkout-index` are the wrong fix: they apply the smudge filter and
+hand back worktree endings.
+
+**`git rev-parse --abbrev-ref HEAD` is wrong for the branch.** On a repo with no
+commits it exits 128 and still prints the literal string `HEAD` on stdout, so a
+naive caller displays a branch called HEAD. `symbolic-ref --quiet --short HEAD`
+returns the real name on an unborn branch and exits 1 with no output when
+detached, which is how the two are told apart.
+
+**`ls-tree` on a directory lists that directory** rather than returning a tree
+record, and its first entry is an ordinary blob, so a directory came back
+holding the contents of `.gitattributes`. Checking the type field looks like it
+covers this and does not. A `stat` does. Dropping `-r` is necessary too but not
+sufficient, which is exactly the kind of half-fix that reads as done.
+
+**Untracked is a real answer**, distinct from "no opinion": a file git has never
+seen is entirely new and the gutter says so. `none` covers not-a-repo, a
+directory, a submodule, a binary blob and anything too large.
+
+**The refresh is event-driven, never a timer.** A save, an external file change,
+or the workspace root arriving. Polling git on an interval to answer "still on
+main" would spawn a process a second forever.
+
 ### Licensing — read before touching the license or accepting a PR
 
 The plan is to sell this eventually. Two things follow, and they pull opposite ways.

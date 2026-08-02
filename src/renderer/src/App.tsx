@@ -13,6 +13,7 @@ import { hasLanguageServer } from './editor/lsp'
 import { Workbench, type Rect, type TabView } from './layout/Workbench'
 import { SurfaceLayer, type Surface } from './layout/SurfaceLayer'
 import { useLayout } from './layout/useLayout'
+import { useGit } from './useGit'
 import { TerminalView } from './terminal/TerminalView'
 import type { Pane } from '../../shared/layout'
 import { SearchPanel } from './SearchPanel'
@@ -156,6 +157,29 @@ export default function App(): React.JSX.Element {
     return new Set([...seen].filter(([, count]) => count > 1).map(([name]) => name))
   }, [layout.openPaths])
 
+  /**
+   * Bumped whenever the repository might have moved under us: a save, an
+   * external file change, or the workspace changing. Cheaper and more honest
+   * than polling git on a timer, which would spawn a process a second forever
+   * to answer "still on main".
+   */
+  const [gitRevision, setGitRevision] = useState(0)
+  const git = useGit(activePath, active?.content ?? null, gitRevision)
+
+  /**
+   * Ask again once the workspace root exists.
+   *
+   * The first ask happens on mount, which is before `session:load` has told
+   * main which folder is open, so it is answered with "no workspace" and the
+   * branch stays blank until something else happens to bump the revision. The
+   * root arriving is the signal, and it covers both the restore and a later
+   * folder change.
+   */
+  useEffect(() => {
+    if (root === null) return
+    setGitRevision((revision) => revision + 1)
+  }, [root])
+
   const [cursors, setCursors] = useState<Record<string, { line: number; column: number }>>({})
   const [restored, setRestored] = useState(false)
   const [lspState, setLspState] = useState<LspState>('stopped')
@@ -183,6 +207,7 @@ export default function App(): React.JSX.Element {
 
   useEffect(() => {
     // Proves the push channel end to end: the root also arrives unsolicited.
+    // The root changing is what re-asks git; see the effect below.
     return window.claven.subscribe('workspace:changed', (payload) => setRoot(payload.root))
   }, [])
 
@@ -391,6 +416,8 @@ export default function App(): React.JSX.Element {
   useEffect(
     () =>
       window.claven.subscribe('file:changed-on-disk', (payload) => {
+        // A checkout, a pull or a rebase all arrive here first.
+        setGitRevision((revision) => revision + 1)
         setDocs((current) => {
           const doc = current.find((candidate) => candidate.path === payload.path)
           if (doc === undefined) return current
@@ -458,6 +485,10 @@ export default function App(): React.JSX.Element {
     )
     // "Opened 2.1 GB in 0.8s." — state what happened and how long it took.
     setNotice({ kind: 'info', text: `saved in ${Math.round(performance.now() - started)}ms` })
+    // The committed text has not changed, but the diff against it has, and a
+    // save is also the most likely moment for a commit or a checkout to have
+    // happened in the terminal next door.
+    setGitRevision((revision) => revision + 1)
   }, [active, reloadFromDisk])
 
   /**
@@ -1024,6 +1055,7 @@ export default function App(): React.JSX.Element {
               )
             }
             onSave={() => void save()}
+            changedLines={git.changedLines}
             initialCursor={cursors[doc.path]}
             revealAt={
               revealAt !== null && revealAt.path === doc.path
@@ -1188,6 +1220,12 @@ export default function App(): React.JSX.Element {
           className="border-line bg-surface-1 text-ink-muted flex shrink-0 items-center gap-4 border-t px-3 text-xs"
           style={{ height: 'var(--statusbar-h)' }}
         >
+          {git.branch !== null && (
+            <span className="text-ink-dim flex items-center gap-1.5" title="current branch">
+              <Icon name="branch" size={12} className="shrink-0" />
+              {git.branch}
+            </span>
+          )}
           {active && (
             <>
               <span className="tabular-nums">
