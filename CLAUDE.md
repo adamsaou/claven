@@ -294,6 +294,28 @@ shipped app can actually open a shell, so `npm run verify:dist` drives the
 packaged binary and checks exactly that. Run it after touching the packaging
 config; the drive suite runs the dev build and cannot see this.
 
+### Developing Claven inside Claven
+
+The whole dogfooding plan is to work on this in this, and three things had to
+change before that loop closed.
+
+**A development build keeps its own profile**, `claven-dev`. The single-instance
+lock is per user-data directory and the app name is the same either way, so
+`npm run dev` with the installed Claven open used to hand off to the running
+window and exit, which looks exactly like the command doing nothing. They would
+also have shared one session file, so a dev build crashing on a half-written
+layout would take the editor you are working in down with it. Skipped when a
+profile is named on the command line, which is how the test suites isolate
+themselves.
+
+**`release/` is not walked.** Packaging puts about 400 MB there, and it was the
+first thing quick-open offered once Claven could build itself.
+
+**Versions are bumped by hand**, and the installer filename carries it, which is
+how you tell which build you are running. There is no auto-update: closing
+Claven and running the new installer is the whole update story, and it is the
+honest one until publishing and signing are decided.
+
 ### Licensing — read before touching the license or accepting a PR
 
 The plan is to sell this eventually. Two things follow, and they pull opposite ways.

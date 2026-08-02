@@ -16,7 +16,10 @@ import { join, relative, sep } from 'node:path'
 /** Directories never worth walking. Kept identical to the tree's hidden set. */
 export const SKIP = new Set([
   '.git', 'node_modules', 'out', 'dist', '.vite', '.venv', '__pycache__',
-  'build', '.gradle', '.idea', 'target', 'vendor', '.next', 'coverage'
+  'build', '.gradle', '.idea', 'target', 'vendor', '.next', 'coverage',
+  // Where electron-builder puts installers. Roughly 400 MB unpacked, and the
+  // first thing quick-open offered once Claven could package itself.
+  'release'
 ])
 
 export type WalkStats = {

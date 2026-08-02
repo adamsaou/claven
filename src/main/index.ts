@@ -128,11 +128,33 @@ function createWindow(): BrowserWindow {
 
 const isSmokeRun = process.argv.includes('--smoke')
 
+/**
+ * A development build keeps its own profile.
+ *
+ * The single-instance lock is per user-data directory, and the app name is the
+ * same either way, so without this `npm run dev` run while the installed Claven
+ * is open does not start: it hands off to the running window and exits, which
+ * looks exactly like the command doing nothing. Developing Claven inside Claven
+ * is the whole dogfooding plan, so the two have to be able to run side by side.
+ *
+ * They would also share one session file, meaning a dev build crashing on a
+ * half-written layout takes the editor you are working in down with it.
+ *
+ * Skipped when a profile was named on the command line, which is how the smoke
+ * and drive suites isolate themselves. Overriding that here would put every
+ * test run back in the shared profile.
+ */
+const hasNamedProfile = process.argv.some((argument) => argument.startsWith('--user-data-dir'))
+
 if (isSmokeRun) {
   // Give the test run its own profile. Sharing userData with a running dev
   // instance makes both fight over the same disk cache, which buries the test
   // output in Chromium cache errors.
   app.setPath('userData', join(app.getPath('temp'), 'claven-smoke'))
+}
+
+if (!app.isPackaged && !isSmokeRun && !hasNamedProfile) {
+  app.setPath('userData', join(app.getPath('appData'), 'claven-dev'))
 }
 
 // A second instance would fight over the same workspace state later on.
